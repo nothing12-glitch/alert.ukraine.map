@@ -26,13 +26,13 @@ npm.cmd run dev
 ## GitHub Pages
 
 1. Створи GitHub repository і push гілку `main`.
-2. У Render створи Blueprint із цього репозиторію за `render.yaml`; для `ALLOWED_ORIGIN` вкажи origin майбутнього Pages сайту, наприклад `https://<username>.github.io`.
-3. Скопіюй URL Render service у GitHub repository variable `ALERTS_API_URL`.
-4. У GitHub Settings → Pages вибери GitHub Actions як deployment source.
+2. У GitHub Settings → Pages вибери GitHub Actions як deployment source.
+3. Live-режим доступний одразу через офіційну мапу. Для режиму `20 сек` у Render створи Blueprint із цього репозиторію за `render.yaml`; для `ALLOWED_ORIGIN` вкажи `https://<username>.github.io`.
+4. Скопіюй URL Render service у GitHub repository variable `ALERTS_API_URL`, щоб увімкнути polling-режим, і перезапусти Pages workflow.
 
 Workflow `.github/workflows/pages.yml` публікує frontend після push у `main`. Режим `20 сек` використовує Render backend; режим `Наживо` вбудовує офіційну мапу та не потребує передачі твого токена нашому frontend.
 
-GitHub Pages не запускає Vite middleware і не може напряму читати офіційну мапу через CORS. Тому workflow зупиняється, якщо `ALERTS_API_URL` не задано; backend можна розгорнути з `render.yaml` і вказати в ньому origin GitHub Pages.
+GitHub Pages не запускає Vite middleware і не може напряму читати офіційну мапу через CORS. Без `ALERTS_API_URL` сторінка відкривається в офіційному live-режимі, а кнопка `20 сек` вимкнена до розгортання backend.
 
 ## Атрибуція карти
 

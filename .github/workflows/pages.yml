@@ -37,12 +37,7 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
           VITE_ALERTS_API_URL: ${{ vars.ALERTS_API_URL }}
-        run: |
-          if [ -z "$VITE_ALERTS_API_URL" ]; then
-            echo "Set the repository variable ALERTS_API_URL to the deployed backend URL."
-            exit 1
-          fi
-          npm run build
+        run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

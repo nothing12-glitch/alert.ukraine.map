@@ -31,6 +31,7 @@ type UpdateMode = '20s' | 'live'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
+const pollingAvailable = import.meta.env.DEV || Boolean(apiBaseUrl)
 
 const regionMetadata: Record<string, { title: string; reportTitle: string }> = {
   cherkasy: { title: 'Черкаська область', reportTitle: 'Черкаська область' },
@@ -152,9 +153,10 @@ function App() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
-  const [updateMode, setUpdateMode] = useState<UpdateMode>(() =>
-    readStored<UpdateMode>('alert-map-update-mode', '20s') === 'live' ? 'live' : '20s',
-  )
+  const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
+    const storedMode = readStored<UpdateMode>('alert-map-update-mode', '20s')
+    return storedMode === 'live' || !pollingAvailable ? 'live' : '20s'
+  })
   const [favorites, setFavorites] = useState<string[]>(() => readStored('alert-map-favorites', []))
   const [activityHistory, setActivityHistory] = useState<ActivityEvent[]>(() => readStored('alert-map-history', []))
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -340,7 +342,7 @@ function App() {
           <strong>{updateMode === '20s' ? 'Автоматична перевірка кожні 20 секунд' : 'Офіційна мапа з push-оновленнями'}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label="Режим оновлення карти">
-          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')}>
+          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} disabled={!pollingAvailable} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Додайте ALERTS_API_URL після розгортання backend'}>
             <RefreshCw size={14} /> 20 сек
           </button>
           <button type="button" className={updateMode === 'live' ? 'filter-active' : ''} aria-pressed={updateMode === 'live'} onClick={() => setUpdateMode('live')} title="Показати офіційну мапу з live-підпискою">
