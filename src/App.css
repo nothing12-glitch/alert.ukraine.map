@@ -288,7 +288,8 @@
   background: #eaf0ec;
 }
 
-.stale-notice {
+.stale-notice,
+.backend-notice {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -300,7 +301,8 @@
   font-size: 13px;
 }
 
-.stale-notice span {
+.stale-notice span,
+.backend-notice span {
   flex: 1;
 }
 

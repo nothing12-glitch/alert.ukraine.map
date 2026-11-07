@@ -146,8 +146,8 @@ function formatTime(date: Date | null) {
 
 function App() {
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
-  const [feedSource, setFeedSource] = useState('map.ukrainealarm.com')
-  const [connection, setConnection] = useState<ConnectionState>('loading')
+  const [feedSource, setFeedSource] = useState('')
+  const [connection, setConnection] = useState<ConnectionState>(pollingAvailable ? 'loading' : 'error')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -156,7 +156,7 @@ function App() {
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
   const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
     const storedMode = readStored<UpdateMode>('alert-map-update-mode', '20s')
-    return storedMode === 'live' || !pollingAvailable ? 'live' : '20s'
+    return storedMode === 'live' ? 'live' : '20s'
   })
   const [favorites, setFavorites] = useState<string[]>(() => readStored('alert-map-favorites', []))
   const [activityHistory, setActivityHistory] = useState<ActivityEvent[]>(() => readStored('alert-map-history', []))
@@ -214,7 +214,7 @@ function App() {
   }, [notificationsEnabled])
 
   useEffect(() => {
-    if (updateMode === 'live') return
+    if (updateMode === 'live' || !pollingAvailable) return
 
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
     const intervalId = window.setInterval(() => void refresh(), 20_000)
@@ -246,7 +246,7 @@ function App() {
   const selectedAlerts = selectedRegion
     ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.region || alert.location) === normalizeLocation(selectedRegion.title))
     : []
-  const sourceUrl = feedSource === 'alerts.in.ua' ? 'https://alerts.in.ua/' : 'https://map.ukrainealarm.com/'
+  const sourceUrl = feedSource === 'map.ukrainealarm.com' ? 'https://map.ukrainealarm.com/' : 'https://alerts.in.ua/'
   const visibleRegions = [...regions]
     .filter((region) => {
       const state = statuses[region.id] ?? 'unknown'
@@ -263,6 +263,8 @@ function App() {
 
   const headline = updateMode === 'live'
     ? 'Офіційна карта працює в режимі наживо'
+    : !pollingAvailable
+      ? 'Підключіть backend для даних нашої мапи'
     : connection === 'loading'
       ? 'Синхронізуємо поточний стан'
       : connection === 'error'
@@ -318,8 +320,8 @@ function App() {
           </span>
         </a>
         <div className="topbar-status" aria-live="polite">
-          <span className={`connection-dot connection-${updateMode === 'live' ? 'live' : connection}`} />
-          <span>{updateMode === 'live' ? 'ОФІЦІЙНИЙ PUSH' : connection === 'live' ? 'ДАНІ ОНОВЛЮЮТЬСЯ' : connection === 'error' ? 'НЕМАЄ ЗВ’ЯЗКУ' : 'З’ЄДНАННЯ'}</span>
+          <span className={`connection-dot connection-${updateMode === 'live' ? 'live' : !pollingAvailable ? 'error' : connection}`} />
+          <span>{updateMode === 'live' ? 'ОФІЦІЙНИЙ PUSH' : !pollingAvailable ? 'BACKEND НЕ НАЛАШТОВАНИЙ' : connection === 'live' ? 'ДАНІ ОНОВЛЮЮТЬСЯ' : connection === 'error' ? 'НЕМАЄ ЗВ’ЯЗКУ' : 'З’ЄДНАННЯ'}</span>
         </div>
       </header>
 
@@ -333,7 +335,7 @@ function App() {
         </div>
         <div className="banner-meta">
           <div className="sync-time"><Clock3 size={15} /><span>{updateMode === 'live' ? 'ПОТІК ВІД ДЖЕРЕЛА' : `ОТРИМАНО ${formatTime(updatedAt)}`}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || updateMode === 'live'} hidden={updateMode === 'live'} aria-label="Оновити дані" title="Оновити дані">
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || updateMode === 'live' || !pollingAvailable} hidden={updateMode === 'live' || !pollingAvailable} aria-label="Оновити дані" title="Оновити дані">
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -342,7 +344,7 @@ function App() {
       <div className="update-mode-bar">
         <div className="update-mode-copy">
           <span className="eyebrow">РЕЖИМ ОНОВЛЕННЯ</span>
-          <strong>{updateMode === '20s' ? 'Автоматична перевірка кожні 20 секунд' : 'Офіційна мапа з push-оновленнями'}</strong>
+          <strong>{updateMode === 'live' ? 'Офіційна мапа з push-оновленнями' : pollingAvailable ? 'Автоматична перевірка кожні 20 секунд' : 'Для власної мапи потрібен backend'}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label="Режим оновлення карти">
           <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} disabled={!pollingAvailable} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Додайте ALERTS_API_URL після розгортання backend'}>
@@ -354,7 +356,14 @@ function App() {
         </div>
       </div>
 
-      {connection === 'error' && updateMode === '20s' && (
+      {!pollingAvailable && updateMode === '20s' && (
+        <div className="backend-notice" role="status">
+          <WifiOff size={16} />
+          <span>Щоб оновлювати цю мапу, розгорніть backend на Render, додайте `ALERTS_IN_UA_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`.</span>
+        </div>
+      )}
+
+      {pollingAvailable && connection === 'error' && updateMode === '20s' && (
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
           <span>{updatedAt ? `Показано останні отримані дані станом на ${formatTime(updatedAt)}.` : 'Перевірте з’єднання та спробуйте оновити дані.'}</span>
@@ -525,7 +534,7 @@ function App() {
           <div className="region-panel-footer">
             <div className="feed-summary"><span>{standingAlertCount}</span><p>тривалі адміністративні позначки на окупованих територіях показуються окремо від поточних загроз</p></div>
             <a href={sourceUrl} target="_blank" rel="noreferrer" className="source-link">
-              <Wifi size={14} /> Джерело: {feedSource} <ArrowUpRight size={13} />
+              <Wifi size={14} /> {feedSource ? `Джерело: ${feedSource}` : 'alerts.in.ua API'} <ArrowUpRight size={13} />
             </a>
           </div>
 
