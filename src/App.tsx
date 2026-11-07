@@ -155,7 +155,7 @@ function App() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
   const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
-    const storedMode = readStored<UpdateMode>('alert-map-update-mode', '20s')
+    const storedMode = readStored<UpdateMode>('alert-map-update-mode-v2', '20s')
     return storedMode === 'live' ? 'live' : '20s'
   })
   const [favorites, setFavorites] = useState<string[]>(() => readStored('alert-map-favorites', []))
@@ -227,7 +227,7 @@ function App() {
   useEffect(() => writeStored('alert-map-favorites', favorites), [favorites])
   useEffect(() => writeStored('alert-map-history', activityHistory), [activityHistory])
   useEffect(() => writeStored('alert-map-notifications', notificationsEnabled), [notificationsEnabled])
-  useEffect(() => writeStored('alert-map-update-mode', updateMode), [updateMode])
+  useEffect(() => writeStored('alert-map-update-mode-v2', updateMode), [updateMode])
 
   const typeFilteredAlerts = alerts.filter((alert) => {
     if (typeFilter === 'air') return isAirAlert(alert)
