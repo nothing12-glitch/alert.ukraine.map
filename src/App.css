@@ -5,6 +5,36 @@
   padding: 0 42px;
 }
 
+.maintenance-banner {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border: 1px solid #e6ca82;
+  border-left: 4px solid #b77b1c;
+  color: #674a13;
+  background: #fff3d4;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.maintenance-banner > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+.maintenance-banner strong {
+  color: #583d0c;
+  font-weight: 700;
+}
+
+.maintenance-banner svg {
+  flex: 0 0 auto;
+}
+
 .topbar {
   min-height: 76px;
   display: flex;
@@ -1013,6 +1043,8 @@
 
 @media (max-width: 760px) {
   .app-shell { padding: 0 18px; }
+  .maintenance-banner { align-items: flex-start; font-size: 11px; }
+  .maintenance-banner > div { display: grid; gap: 1px; }
   .topbar { min-height: 66px; }
   .topbar-status { font-size: 9px; }
   .alert-banner { min-height: 94px; margin-top: 18px; padding: 14px; gap: 11px; }

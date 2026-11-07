@@ -13,6 +13,7 @@ import {
   Search,
   ShieldAlert,
   Star,
+  Wrench,
   Wifi,
   WifiOff,
 } from 'lucide-react'
@@ -311,6 +312,13 @@ function App() {
 
   return (
     <main className="app-shell">
+      <div className="maintenance-banner" role="status" aria-live="polite">
+        <Wrench size={17} aria-hidden="true" />
+        <div>
+          <strong>Проводяться технічні роботи</strong>
+          <span>Відновлення сайту очікується протягом 5–7 днів.</span>
+        </div>
+      </div>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Повітряна мапа України">
           <span className="brand-mark"><RadioTower size={20} strokeWidth={2.2} /></span>
