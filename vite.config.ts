@@ -1,21 +1,8 @@
 import react from '@vitejs/plugin-react'
-import { load } from 'cheerio'
-import { defineConfig, type Plugin } from 'vite'
+import { fetchAlertsFeed, type AlertFeed } from './server/alerts-feed.mjs'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 
-type OfficialAlert = {
-  location: string
-  type: string
-  startedAt: string
-  duration: string
-}
-
-type AlertFeed = {
-  source: string
-  fetchedAt: string
-  alerts: OfficialAlert[]
-}
-
-function officialAlertsFeed(): Plugin {
+function officialAlertsFeed(apiToken: string): Plugin {
   let cachedFeed: AlertFeed | null = null
   let cachedAt = 0
   let pendingRequest: Promise<AlertFeed> | null = null
@@ -35,41 +22,7 @@ function officialAlertsFeed(): Plugin {
           }
 
           if (!pendingRequest) {
-            pendingRequest = (async () => {
-              const upstream = await fetch('https://map.ukrainealarm.com/', {
-                headers: { Accept: 'text/html' },
-                signal: AbortSignal.timeout(12_000),
-              })
-
-              if (!upstream.ok) throw new Error(`Official map returned HTTP ${upstream.status}`)
-
-              const html = await upstream.text()
-              const $ = load(html)
-              const alertsByKey = new Map<string, OfficialAlert>()
-
-              $('.city-item').each((_, element) => {
-                const card = $(element)
-                const location = card.find('.title').first().text().trim()
-                const type = card.find('.description').first().text().trim()
-                const startedAt = card.find('.time').first().text().trim()
-                const duration = card.find('.duration').first().text().trim()
-
-                if (!location || !type) return
-
-                const key = `${location.toLocaleLowerCase('uk')}|${type.toLocaleLowerCase('uk')}`
-                if (!alertsByKey.has(key)) alertsByKey.set(key, { location, type, startedAt, duration })
-              })
-
-              if (alertsByKey.size === 0 && !$('.general-aside').length) {
-                throw new Error('The official map did not contain an alert feed')
-              }
-
-              return {
-                source: 'map.ukrainealarm.com',
-                fetchedAt: new Date().toISOString(),
-                alerts: [...alertsByKey.values()],
-              }
-            })()
+            pendingRequest = fetchAlertsFeed(apiToken)
           }
 
           const feed = await pendingRequest
@@ -87,7 +40,11 @@ function officialAlertsFeed(): Plugin {
   }
 }
 
-export default defineConfig({
-  base: process.env.BASE_PATH ?? '/',
-  plugins: [react(), officialAlertsFeed()],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+
+  return {
+    base: process.env.BASE_PATH ?? '/',
+    plugins: [react(), officialAlertsFeed(env.ALERTS_IN_UA_TOKEN ?? '')],
+  }
 })

@@ -13,7 +13,9 @@ npm.cmd run dev
 
 ## Дані
 
-Джерело даних: [офіційна карта map.ukrainealarm.com](https://map.ukrainealarm.com/). Vite middleware та standalone backend читають публічні картки сторінки, прибирають дублікати й віддають браузеру тільки місце, тип загрози, час початку та тривалість. Токен або інші дані авторизації не передаються клієнту. Режим `20 сек` оновлює дані через proxy; backend кешує upstream-відповідь 20 секунд. У шапці показаний час отримання даних. Якщо джерело недоступне, карта зберігає останній успішний стан і позначає його як застарілий.
+Для власної карти джерелом є [alerts.in.ua API](https://alerts.in.ua/), якщо на сервері налаштовано `ALERTS_IN_UA_TOKEN`. Backend викликає `/v1/alerts/active.json` із Bearer-токеном, групує записи за `location_oblast` і віддає браузеру тільки нормалізовані поля. Без токена використовується fallback на публічні картки [map.ukrainealarm.com](https://map.ukrainealarm.com/). Токен ніколи не передається frontend. Режим `20 сек` кешує відповіді backend на 20 секунд (до 3 запитів на хвилину). У шапці показаний час отримання даних; при помилці карта зберігає останній успішний стан.
+
+Ключ `alerts.in.ua` запитується окремо через [форму для розробників](https://alerts.in.ua/api-request). Форма `api.ukrainealarm.com` видає ключ іншого сервісу й не підходить для цього API-клієнта.
 
 Є фільтри повітряних тривог та інших загроз, пошук і фільтри регіонів, обране, журнал змін, дозвільні браузерні сповіщення та CSV-експорт. Налаштування й журнал зберігаються локально у браузері. Режим `Наживо` вбудовує офіційну карту, яка використовує власну push-підписку; персональний токен наш frontend не читає і не передає.
 
@@ -27,12 +29,12 @@ npm.cmd run dev
 
 1. Створи GitHub repository і push гілку `main`.
 2. У GitHub Settings → Pages вибери GitHub Actions як deployment source.
-3. Live-режим доступний одразу через офіційну мапу. Для режиму `20 сек` у Render створи Blueprint із цього репозиторію за `render.yaml`; для `ALLOWED_ORIGIN` вкажи `https://<username>.github.io`.
-4. Скопіюй URL Render service у GitHub repository variable `ALERTS_API_URL`, щоб увімкнути polling-режим, і перезапусти Pages workflow.
+3. У Render створи Blueprint із цього репозиторію за `render.yaml`; задай `ALLOWED_ORIGIN` як `https://<username>.github.io` і `ALERTS_IN_UA_TOKEN` як секретне значення зі свого alerts.in.ua developer key.
+4. Скопіюй URL Render service у GitHub repository variable `ALERTS_API_URL`, щоб увімкнути режим `20 сек`, і перезапусти Pages workflow.
 
 Workflow `.github/workflows/pages.yml` публікує frontend після push у `main`. Режим `20 сек` використовує Render backend; режим `Наживо` вбудовує офіційну мапу та не потребує передачі твого токена нашому frontend.
 
-GitHub Pages не запускає Vite middleware і не може напряму читати офіційну мапу через CORS. Без `ALERTS_API_URL` сторінка відкривається в офіційному live-режимі, а кнопка `20 сек` вимкнена до розгортання backend.
+GitHub Pages не запускає Vite middleware і не може напряму читати API через CORS. Без `ALERTS_API_URL` сторінка відкривається в live-режимі, а polling-кнопка вимкнена до розгортання backend. Форма запиту ключа на `api.ukrainealarm.com` і developer API `alerts.in.ua` — різні сервіси; для цього backend потрібен токен саме `alerts.in.ua`.
 
 ## Атрибуція карти
 

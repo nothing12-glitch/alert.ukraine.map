@@ -8,8 +8,8 @@
 
 ## Alert Data
 
-- Read public alert cards from `https://map.ukrainealarm.com/` through the local Vite middleware at `/api/alerts`.
-- Normalize and deduplicate visible card fields server-side; never expose or copy authorization tokens into browser code.
+- Use `alerts.in.ua` `/v1/alerts/active.json` through the backend when `ALERTS_IN_UA_TOKEN` is configured; otherwise keep the public `map.ukrainealarm.com` feed as fallback.
+- Normalize and deduplicate source data server-side, including parent-oblast mapping; never expose or copy authorization tokens into browser code or GitHub variables.
 - Do not substitute mock statuses for source data. The selected polling mode is every 20 seconds; preserve and label the last successful data when offline.
 - The live mode embeds the official map and its own push connection; do not copy or expose credentials from that page.
 - Keep long-running administrative notices in occupied territory visually distinct from current threats and exclude them from current-threat totals.

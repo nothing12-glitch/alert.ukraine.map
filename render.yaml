@@ -11,3 +11,5 @@ services:
         value: 22
       - key: ALLOWED_ORIGIN
         sync: false
+      - key: ALERTS_IN_UA_TOKEN
+        sync: false

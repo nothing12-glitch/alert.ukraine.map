@@ -23,7 +23,7 @@ type AlertState = 'active' | 'nominal' | 'clear' | 'unknown'
 type ConnectionState = 'loading' | 'live' | 'error'
 type SvgLocation = { id: string; name: string; path: string }
 type Region = SvgLocation & { title: string; reportTitle: string }
-type OfficialAlert = { location: string; type: string; startedAt: string; duration: string }
+type OfficialAlert = { location: string; region: string; type: string; startedAt: string; duration: string; alertLevel?: string }
 type AlertFeed = { source: string; fetchedAt: string; alerts: OfficialAlert[] }
 type TypeFilter = 'all' | 'air' | 'other'
 type RegionFilter = 'all' | 'active' | 'favorite'
@@ -86,8 +86,8 @@ function normalizeLocation(value: string) {
 }
 
 function getRegionStatuses(alerts: OfficialAlert[]) {
-  const activeLocations = new Set(alerts.filter((alert) => !isStandingOccupiedAlert(alert)).map((alert) => normalizeLocation(alert.location)))
-  const nominalLocations = new Set(alerts.filter(isStandingOccupiedAlert).map((alert) => normalizeLocation(alert.location)))
+  const activeLocations = new Set(alerts.filter((alert) => !isStandingOccupiedAlert(alert)).map((alert) => normalizeLocation(alert.region || alert.location)))
+  const nominalLocations = new Set(alerts.filter(isStandingOccupiedAlert).map((alert) => normalizeLocation(alert.region || alert.location)))
   return Object.fromEntries(
     regions.map((region) => [
       region.id,
@@ -101,11 +101,11 @@ function getRegionStatuses(alerts: OfficialAlert[]) {
 }
 
 function getAlertKey(alert: OfficialAlert) {
-  return `${normalizeLocation(alert.location)}|${normalizeLocation(alert.type)}`
+  return `${normalizeLocation(alert.location)}|${normalizeLocation(alert.type)}|${normalizeLocation(alert.alertLevel ?? '')}`
 }
 
 function isStandingOccupiedAlert(alert: OfficialAlert) {
-  const location = normalizeLocation(alert.location)
+  const location = normalizeLocation(alert.region || alert.location)
   const isOccupiedArea = location === normalizeLocation('Луганська область')
     || location === normalizeLocation('Автономна Республіка Крим')
   const durationDays = Number(alert.duration.match(/(\d+)\s*д/i)?.[1] ?? 0)
@@ -146,6 +146,7 @@ function formatTime(date: Date | null) {
 
 function App() {
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
+  const [feedSource, setFeedSource] = useState('map.ukrainealarm.com')
   const [connection, setConnection] = useState<ConnectionState>('loading')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -202,6 +203,7 @@ function App() {
 
       previousAlerts.current = currentAlerts
       setAlerts(feed.alerts)
+      setFeedSource(feed.source)
       setUpdatedAt(new Date(feed.fetchedAt))
       setConnection('live')
     } catch {
@@ -237,13 +239,14 @@ function App() {
     : Object.fromEntries(regions.map((region) => [region.id, 'unknown'])) as Record<string, AlertState>
   const activeAlerts = typeFilteredAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
   const standingAlertCount = typeFilteredAlerts.filter(isStandingOccupiedAlert).length
-  const activeCount = new Set(activeAlerts.map((alert) => normalizeLocation(alert.location))).size
+  const activeCount = new Set(activeAlerts.map((alert) => normalizeLocation(alert.region || alert.location))).size
   const airAlertCount = activeAlerts.filter(isAirAlert).length
   const otherThreatCount = activeAlerts.length - airAlertCount
   const selectedRegion = regions.find((region) => region.id === selectedId)
   const selectedAlerts = selectedRegion
-    ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.location) === normalizeLocation(selectedRegion.title))
+    ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.region || alert.location) === normalizeLocation(selectedRegion.title))
     : []
+  const sourceUrl = feedSource === 'alerts.in.ua' ? 'https://alerts.in.ua/' : 'https://map.ukrainealarm.com/'
   const visibleRegions = [...regions]
     .filter((region) => {
       const state = statuses[region.id] ?? 'unknown'
@@ -447,7 +450,7 @@ function App() {
                 <span>{statusLabels[statuses[selectedRegion.id] ?? 'unknown']}</span>
                 {selectedAlerts.map((alert) => (
                   <span key={`${alert.location}-${alert.type}`} className="selected-alert-type">
-                    {isStandingOccupiedAlert(alert) ? 'Тривала позначка · ' : ''}{alert.type} · {alert.startedAt} · {alert.duration}
+                    {isStandingOccupiedAlert(alert) ? 'Тривала позначка · ' : ''}{alert.type}{alert.alertLevel ? ` · ${alert.alertLevel === 'yellow' ? 'жовтий' : 'червоний'} рівень` : ''} · {alert.startedAt} · {alert.duration}
                   </span>
                 ))}
               </div>
@@ -521,8 +524,8 @@ function App() {
 
           <div className="region-panel-footer">
             <div className="feed-summary"><span>{standingAlertCount}</span><p>тривалі адміністративні позначки на окупованих територіях показуються окремо від поточних загроз</p></div>
-            <a href="https://map.ukrainealarm.com/" target="_blank" rel="noreferrer" className="source-link">
-              <Wifi size={14} /> Джерело: map.ukrainealarm.com <ArrowUpRight size={13} />
+            <a href={sourceUrl} target="_blank" rel="noreferrer" className="source-link">
+              <Wifi size={14} /> Джерело: {feedSource} <ArrowUpRight size={13} />
             </a>
           </div>
 

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { load } from 'cheerio'
+import { fetchAlertsFeed } from './alerts-feed.mjs'
 
 const port = Number(process.env.PORT ?? 3000)
 const allowedOrigin = process.env.ALLOWED_ORIGIN ?? '*'
@@ -21,46 +21,11 @@ function sendJson(request, response, status, data) {
   response.end(JSON.stringify(data))
 }
 
-async function fetchOfficialAlerts() {
-  const response = await fetch('https://map.ukrainealarm.com/', {
-    headers: { Accept: 'text/html' },
-    signal: AbortSignal.timeout(12_000),
-  })
-
-  if (!response.ok) throw new Error(`Official map returned HTTP ${response.status}`)
-
-  const $ = load(await response.text())
-  const alertsByKey = new Map()
-
-  $('.city-item').each((_, element) => {
-    const card = $(element)
-    const location = card.find('.title').first().text().trim()
-    const type = card.find('.description').first().text().trim()
-    const startedAt = card.find('.time').first().text().trim()
-    const duration = card.find('.duration').first().text().trim()
-
-    if (!location || !type) return
-
-    const key = `${location.toLocaleLowerCase('uk')}|${type.toLocaleLowerCase('uk')}`
-    if (!alertsByKey.has(key)) alertsByKey.set(key, { location, type, startedAt, duration })
-  })
-
-  if (alertsByKey.size === 0 && !$('.general-aside').length) {
-    throw new Error('The official map did not contain an alert feed')
-  }
-
-  return {
-    source: 'map.ukrainealarm.com',
-    fetchedAt: new Date().toISOString(),
-    alerts: [...alertsByKey.values()],
-  }
-}
-
 async function getAlerts() {
   if (cachedFeed && Date.now() - cachedAt < cacheDuration) return cachedFeed
   if (pendingRequest) return pendingRequest
 
-  pendingRequest = fetchOfficialAlerts()
+  pendingRequest = fetchAlertsFeed()
   try {
     cachedFeed = await pendingRequest
     cachedAt = Date.now()
@@ -93,7 +58,7 @@ const server = createServer(async (request, response) => {
     try {
       sendJson(request, response, 200, await getAlerts())
     } catch {
-      sendJson(request, response, 502, { error: 'Не вдалося отримати дані офіційної карти.' })
+      sendJson(request, response, 502, { error: 'Не вдалося отримати дані джерела тривог.' })
     }
     return
   }
