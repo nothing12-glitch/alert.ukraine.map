@@ -347,7 +347,7 @@ function App() {
           <strong>{updateMode === 'live' ? 'Офіційна мапа з push-оновленнями' : pollingAvailable ? 'Автоматична перевірка кожні 20 секунд' : 'Для власної мапи потрібен backend'}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label="Режим оновлення карти">
-          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} disabled={!pollingAvailable} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Додайте ALERTS_API_URL після розгортання backend'}>
+          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Показати нашу карту; оновлення запрацює після налаштування backend'}>
             <RefreshCw size={14} /> 20 сек
           </button>
           <button type="button" className={updateMode === 'live' ? 'filter-active' : ''} aria-pressed={updateMode === 'live'} onClick={() => setUpdateMode('live')} title="Показати офіційну мапу з live-підпискою">
