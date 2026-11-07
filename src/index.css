@@ -1,0 +1,57 @@
+:root {
+  --canvas: #f2f5f0;
+  --ink: #17231e;
+  --muted: #748078;
+  --line: #d8e0da;
+  --teal: #245c4e;
+  --alert: #d94d3d;
+  --map-active: #e85a46;
+  --map-clear: #c5d4cb;
+  --map-nominal: #93a39a;
+  --map-unknown: #d2d9d4;
+  --sans: Bahnschrift, 'Segoe UI', sans-serif;
+  --mono: Consolas, 'Courier New', monospace;
+
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  letter-spacing: 0;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background-color: var(--canvas);
+  background-image: radial-gradient(#d9e1db 0.7px, transparent 0.7px);
+  background-size: 16px 16px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  letter-spacing: 0;
+}
+
+::selection {
+  color: #fff;
+  background: #31785e;
+}
+
+#root {
+  min-height: 100vh;
+}
