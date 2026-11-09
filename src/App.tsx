@@ -13,14 +13,20 @@ import {
   Search,
   ShieldAlert,
   Star,
-  Wrench,
   Wifi,
   WifiOff,
+  Zap,
 } from 'lucide-react'
 import ukraineMap from '@svg-maps/ukraine'
+import {
+  neptunStreamUrl,
+  normalizeNeptunFeed,
+  type NeptunAlertPayload,
+} from '../shared/neptun-alerts.mjs'
 import './App.css'
 
 type AlertState = 'active' | 'nominal' | 'clear' | 'unknown'
+type ThreatLevel = 'red' | 'yellow'
 type ConnectionState = 'loading' | 'live' | 'error'
 type SvgLocation = { id: string; name: string; path: string }
 type Region = SvgLocation & { title: string; reportTitle: string }
@@ -28,7 +34,7 @@ type OfficialAlert = { location: string; region: string; type: string; startedAt
 type AlertFeed = { source: string; fetchedAt: string; alerts: OfficialAlert[] }
 type TypeFilter = 'all' | 'air' | 'other'
 type RegionFilter = 'all' | 'active' | 'favorite'
-type UpdateMode = '20s' | 'live'
+type UpdateMode = 'ws' | '20s' | 'live'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
@@ -82,8 +88,18 @@ const statusOrder: Record<AlertState, number> = {
   unknown: 3,
 }
 
+const threatLevelLabels: Record<ThreatLevel, string> = {
+  red: 'Червона тривога',
+  yellow: 'Жовта тривога',
+}
+
 function normalizeLocation(value: string) {
   return value.trim().toLocaleLowerCase('uk').replaceAll('’', "'").replace(/\s+/g, ' ')
+}
+
+// Джерело може не передати рівень; тоді рахуємо червоним — недооцінка небезпеки гірша за переоцінку.
+function getAlertLevel(alert: OfficialAlert): ThreatLevel {
+  return alert.alertLevel?.toLowerCase() === 'yellow' ? 'yellow' : 'red'
 }
 
 function getRegionStatuses(alerts: OfficialAlert[]) {
@@ -101,6 +117,30 @@ function getRegionStatuses(alerts: OfficialAlert[]) {
   ) as Record<string, AlertState>
 }
 
+function getRegionLevels(alerts: OfficialAlert[]) {
+  const levelByLocation = new Map<string, ThreatLevel>()
+
+  for (const alert of alerts) {
+    if (isStandingOccupiedAlert(alert)) continue
+    const location = normalizeLocation(alert.region || alert.location)
+    const level = getAlertLevel(alert)
+    if (level === 'yellow' && levelByLocation.get(location) === 'red') continue
+    levelByLocation.set(location, level)
+  }
+
+  return Object.fromEntries(
+    regions.flatMap((region) => {
+      const level = levelByLocation.get(normalizeLocation(region.title))
+        ?? levelByLocation.get(normalizeLocation(region.reportTitle))
+      return level ? [[region.id, level] as [string, ThreatLevel]] : []
+    }),
+  ) as Record<string, ThreatLevel>
+}
+
+function getRegionLabel(state: AlertState, level?: ThreatLevel) {
+  return state === 'active' && level ? threatLevelLabels[level] : statusLabels[state]
+}
+
 function getAlertKey(alert: OfficialAlert) {
   return `${normalizeLocation(alert.location)}|${normalizeLocation(alert.type)}|${normalizeLocation(alert.alertLevel ?? '')}`
 }
@@ -115,6 +155,18 @@ function isStandingOccupiedAlert(alert: OfficialAlert) {
 
 function isAirAlert(alert: OfficialAlert) {
   return normalizeLocation(alert.type).includes('повітряна тривога')
+}
+
+const regionIdByLocation = new Map<string, string>(
+  regions.flatMap((region): [string, string][] => [
+    [normalizeLocation(region.title), region.id],
+    [normalizeLocation(region.reportTitle), region.id],
+  ]),
+)
+
+function getAlertRegionId(alert: OfficialAlert) {
+  return regionIdByLocation.get(normalizeLocation(alert.region || alert.location))
+    ?? regionIdByLocation.get(normalizeLocation(alert.location))
 }
 
 function readStored<T>(key: string, fallback: T): T {
@@ -145,10 +197,58 @@ function formatTime(date: Date | null) {
   }).format(date)
 }
 
+let alertAudioContext: AudioContext | null = null
+
+function playAlertTone() {
+  try {
+    alertAudioContext ??= new AudioContext()
+    const context = alertAudioContext
+    if (context.state === 'suspended') void context.resume()
+
+    for (const [index, frequency] of [880, 660].entries()) {
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      const from = context.currentTime + index * 0.2
+
+      oscillator.type = 'sine'
+      oscillator.frequency.value = frequency
+      gain.gain.setValueAtTime(0.0001, from)
+      gain.gain.exponentialRampToValueAtTime(0.12, from + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, from + 0.17)
+      oscillator.connect(gain).connect(context.destination)
+      oscillator.start(from)
+      oscillator.stop(from + 0.18)
+    }
+  } catch {
+    return
+  }
+}
+
+function vibrateDevice(pattern: number[]) {
+  const vibrate = (navigator as Navigator & { vibrate?: (pattern: number[]) => boolean }).vibrate
+  vibrate?.call(navigator, pattern)
+}
+
+function notifyAboutThreats(alerts: OfficialAlert[], soundEnabled: boolean, notificationsEnabled: boolean) {
+  if (soundEnabled) {
+    playAlertTone()
+    vibrateDevice([200, 90, 200])
+  }
+
+  if (!notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return
+
+  const [first, ...rest] = alerts
+  const summary = `${first.location}: ${first.type} · ${getAlertLevel(first) === 'yellow' ? 'жовтий' : 'червоний'} рівень`
+  new Notification(rest.length ? `Нових загроз: ${alerts.length}` : `Загроза: ${first.location}`, {
+    body: rest.length ? `${summary}\nі ще ${rest.length} — відкрийте мапу` : summary,
+    tag: 'alert-map-new-threats',
+  })
+}
+
 function App() {
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
   const [feedSource, setFeedSource] = useState('')
-  const [connection, setConnection] = useState<ConnectionState>(pollingAvailable ? 'loading' : 'error')
+  const [connection, setConnection] = useState<ConnectionState>('loading')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -156,15 +256,57 @@ function App() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
   const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
-    const storedMode = readStored<UpdateMode>('alert-map-update-mode-v2', '20s')
-    return storedMode === 'live' ? 'live' : '20s'
+    const storedMode = readStored<UpdateMode>('alert-map-update-mode-v2', 'ws')
+    return storedMode === '20s' || storedMode === 'live' ? storedMode : 'ws'
   })
   const [favorites, setFavorites] = useState<string[]>(() => readStored('alert-map-favorites', []))
   const [activityHistory, setActivityHistory] = useState<ActivityEvent[]>(() => readStored('alert-map-history', []))
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => readStored('alert-map-notifications', false) && 'Notification' in window && Notification.permission === 'granted',
   )
+  const [notifyFavoritesOnly, setNotifyFavoritesOnly] = useState(() => readStored('alert-map-notify-favorites-only', false))
+  const [notifySound, setNotifySound] = useState(() => readStored('alert-map-notify-sound', true))
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
+  const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites })
+
+  useEffect(() => {
+    notifySettings.current = { favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites }
+  }, [notifyFavoritesOnly, notifySound, favorites])
+
+  const applyFeed = useCallback((feed: AlertFeed) => {
+    const currentAlerts = new Map(feed.alerts.map((alert) => [getAlertKey(alert), alert]))
+    const currentKeys = new Set(currentAlerts.keys())
+    const previous = previousAlerts.current
+
+    if (previous) {
+      const newAlerts = feed.alerts.filter((alert) => !previous.has(getAlertKey(alert)))
+      const endedAlerts = [...previous.values()].filter((alert) => !currentKeys.has(getAlertKey(alert)))
+      const now = new Date().toISOString()
+      const events: ActivityEvent[] = [
+        ...newAlerts.map((alert, index) => ({ id: `new-${now}-${index}`, action: 'new' as const, alert, at: now })),
+        ...endedAlerts.map((alert, index) => ({ id: `ended-${now}-${index}`, action: 'ended' as const, alert, at: now })),
+      ]
+
+      if (events.length) setActivityHistory((current) => [...events, ...current].slice(0, 40))
+
+      const { favoritesOnly, sound, favorites: favoriteIds } = notifySettings.current
+      const threats = newAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
+      const scopedThreats = favoritesOnly
+        ? threats.filter((alert) => {
+            const regionId = getAlertRegionId(alert)
+            return regionId !== undefined && favoriteIds.includes(regionId)
+          })
+        : threats
+
+      if (scopedThreats.length) notifyAboutThreats(scopedThreats, sound, notificationsEnabled)
+    }
+
+    previousAlerts.current = currentAlerts
+    setAlerts(feed.alerts)
+    setFeedSource(feed.source)
+    setUpdatedAt(new Date(feed.fetchedAt))
+    setConnection('live')
+  }, [notificationsEnabled])
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true)
@@ -180,42 +322,16 @@ function App() {
 
       const feed = await response.json() as AlertFeed
       if (!Array.isArray(feed.alerts) || !feed.fetchedAt) throw new Error('Некоректна відповідь джерела.')
-      const currentAlerts = new Map(feed.alerts.map((alert) => [getAlertKey(alert), alert]))
-      const currentKeys = new Set(currentAlerts.keys())
-      const previous = previousAlerts.current
-
-      if (previous) {
-        const newAlerts = feed.alerts.filter((alert) => !previous.has(getAlertKey(alert)))
-        const endedAlerts = [...previous.values()].filter((alert) => !currentKeys.has(getAlertKey(alert)))
-        const now = new Date().toISOString()
-        const events: ActivityEvent[] = [
-          ...newAlerts.map((alert, index) => ({ id: `new-${now}-${index}`, action: 'new' as const, alert, at: now })),
-          ...endedAlerts.map((alert, index) => ({ id: `ended-${now}-${index}`, action: 'ended' as const, alert, at: now })),
-        ]
-
-        if (events.length) setActivityHistory((current) => [...events, ...current].slice(0, 40))
-
-        if (newAlerts.length && notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification('Нова загроза на мапі', {
-            body: newAlerts.slice(0, 3).map((alert) => `${alert.location}: ${alert.type}`).join('\n'),
-          })
-        }
-      }
-
-      previousAlerts.current = currentAlerts
-      setAlerts(feed.alerts)
-      setFeedSource(feed.source)
-      setUpdatedAt(new Date(feed.fetchedAt))
-      setConnection('live')
+      applyFeed(feed)
     } catch {
       setConnection('error')
     } finally {
       setIsRefreshing(false)
     }
-  }, [notificationsEnabled])
+  }, [applyFeed])
 
   useEffect(() => {
-    if (updateMode === 'live' || !pollingAvailable) return
+    if (updateMode !== '20s' || !pollingAvailable) return
 
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
     const intervalId = window.setInterval(() => void refresh(), 20_000)
@@ -225,9 +341,70 @@ function App() {
     }
   }, [refresh, updateMode])
 
+  useEffect(() => {
+    if (updateMode !== 'ws') return
+
+    let disposed = false
+    let socket: WebSocket | null = null
+    let retryTimer = 0
+    let attempt = 0
+    let lastFrameAt = 0
+
+    const connect = () => {
+      if (disposed) return
+      setConnection('loading')
+
+      const current = new WebSocket(neptunStreamUrl)
+      socket = current
+
+      current.addEventListener('open', () => {
+        attempt = 0
+        lastFrameAt = Date.now()
+      })
+
+      current.addEventListener('message', (event) => {
+        lastFrameAt = Date.now()
+        try {
+          const frame = JSON.parse(String(event.data)) as { type?: string; data?: NeptunAlertPayload }
+          if (frame.type === 'alerts') applyFeed(normalizeNeptunFeed(frame.data ?? {}))
+        } catch {
+          // Кадри потоку не проходять разом із даними інших треків — просто чекаємо наступного.
+        }
+      })
+
+      current.addEventListener('error', () => current.close())
+
+      current.addEventListener('close', () => {
+        if (disposed) return
+        socket = null
+        setConnection('error')
+        attempt += 1
+        retryTimer = window.setTimeout(connect, Math.min(30_000, 2 ** Math.min(attempt, 5) * 1_000))
+      })
+    }
+
+    connect()
+    // NEPTUN шле heartbeat; якщо довго немає жодного кадру, з'єднання зависло — розриваємо його заради reconnect.
+    const stallTimer = window.setInterval(() => {
+      if (lastFrameAt && Date.now() - lastFrameAt > 60_000) {
+        lastFrameAt = 0
+        socket?.close()
+      }
+    }, 10_000)
+
+    return () => {
+      disposed = true
+      window.clearTimeout(retryTimer)
+      window.clearInterval(stallTimer)
+      socket?.close()
+    }
+  }, [applyFeed, updateMode])
+
   useEffect(() => writeStored('alert-map-favorites', favorites), [favorites])
   useEffect(() => writeStored('alert-map-history', activityHistory), [activityHistory])
   useEffect(() => writeStored('alert-map-notifications', notificationsEnabled), [notificationsEnabled])
+  useEffect(() => writeStored('alert-map-notify-favorites-only', notifyFavoritesOnly), [notifyFavoritesOnly])
+  useEffect(() => writeStored('alert-map-notify-sound', notifySound), [notifySound])
   useEffect(() => writeStored('alert-map-update-mode-v2', updateMode), [updateMode])
 
   const typeFilteredAlerts = alerts.filter((alert) => {
@@ -238,16 +415,19 @@ function App() {
   const statuses = updatedAt
     ? getRegionStatuses(typeFilteredAlerts)
     : Object.fromEntries(regions.map((region) => [region.id, 'unknown'])) as Record<string, AlertState>
+  const regionLevels = updatedAt ? getRegionLevels(typeFilteredAlerts) : {}
   const activeAlerts = typeFilteredAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
   const standingAlertCount = typeFilteredAlerts.filter(isStandingOccupiedAlert).length
   const activeCount = new Set(activeAlerts.map((alert) => normalizeLocation(alert.region || alert.location))).size
+  const redCount = Object.values(regionLevels).filter((level) => level === 'red').length
+  const yellowCount = Object.values(regionLevels).filter((level) => level === 'yellow').length
   const airAlertCount = activeAlerts.filter(isAirAlert).length
   const otherThreatCount = activeAlerts.length - airAlertCount
   const selectedRegion = regions.find((region) => region.id === selectedId)
   const selectedAlerts = selectedRegion
     ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.region || alert.location) === normalizeLocation(selectedRegion.title))
     : []
-  const sourceUrl = feedSource === 'map.ukrainealarm.com' ? 'https://map.ukrainealarm.com/' : 'https://alerts.in.ua/'
+  const sourceUrl = feedSource === 'neptun.in.ua' ? 'https://neptun.in.ua/' : 'https://alerts.in.ua/'
   const visibleRegions = [...regions]
     .filter((region) => {
       const state = statuses[region.id] ?? 'unknown'
@@ -259,19 +439,32 @@ function App() {
     .sort((left, right) => {
       const leftStatus = statuses[left.id] ?? 'unknown'
       const rightStatus = statuses[right.id] ?? 'unknown'
-      return statusOrder[leftStatus] - statusOrder[rightStatus] || left.title.localeCompare(right.title, 'uk')
+      const leftRank = regionLevels[left.id] === 'yellow' ? 1 : 0
+      const rightRank = regionLevels[right.id] === 'yellow' ? 1 : 0
+      return statusOrder[leftStatus] - statusOrder[rightStatus] || leftRank - rightRank || left.title.localeCompare(right.title, 'uk')
     })
 
-  const headline = updateMode === 'live'
+  const usingStream = updateMode === 'ws'
+  const usingOfficialLive = updateMode === 'live'
+  const needsBackend = updateMode === '20s' && !pollingAvailable
+  const feedReady = !needsBackend && connection === 'live'
+
+  const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
+
+  const headline = usingOfficialLive
     ? 'Офіційна карта працює в режимі наживо'
-    : !pollingAvailable
+    : needsBackend
       ? 'Підключіть backend для даних нашої мапи'
     : connection === 'loading'
-      ? 'Синхронізуємо поточний стан'
+      ? usingStream ? 'Підключаємось до потоку NEPTUN' : 'Синхронізуємо поточний стан'
       : connection === 'error'
-        ? updatedAt ? 'Немає зв’язку з джерелом' : 'Не вдалося отримати дані'
+        ? usingStream
+          ? updatedAt ? 'Потік розірвано, триває перепідключення' : 'Не вдалося підключитися до потоку NEPTUN'
+          : updatedAt ? 'Немає зв’язку з джерелом' : 'Не вдалося отримати дані'
         : activeCount > 0
-          ? `Загрози зафіксовані у ${activeCount} регіонах`
+          ? redCount
+            ? `Червоний рівень загрози у ${redCount} регіонах`
+            : `Жовтий рівень загрози у ${yellowCount} регіонах`
           : 'Активних загроз не зафіксовано'
 
   const toggleFavorite = (regionId: string) => {
@@ -296,8 +489,8 @@ function App() {
   const exportAlerts = () => {
     const escapeCell = (value: string) => `"${value.replaceAll('"', '""')}"`
     const rows = [
-      ['Місце', 'Загроза', 'Початок за джерелом', 'Тривалість за джерелом'],
-      ...typeFilteredAlerts.map((alert) => [alert.location, alert.type, alert.startedAt, alert.duration]),
+      ['Місце', 'Загроза', 'Рівень', 'Початок за джерелом', 'Тривалість за джерелом'],
+      ...typeFilteredAlerts.map((alert) => [alert.location, alert.type, getAlertLevel(alert) === 'yellow' ? 'жовтий' : 'червоний', alert.startedAt, alert.duration]),
     ]
     const csv = rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')
     const link = document.createElement('a')
@@ -312,13 +505,6 @@ function App() {
 
   return (
     <main className="app-shell">
-      <div className="maintenance-banner" role="status" aria-live="polite">
-        <Wrench size={17} aria-hidden="true" />
-        <div>
-          <strong>Проводяться технічні роботи</strong>
-          <span>Відновлення сайту очікується протягом 5–7 днів.</span>
-        </div>
-      </div>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Повітряна мапа України">
           <span className="brand-mark"><RadioTower size={20} strokeWidth={2.2} /></span>
@@ -328,22 +514,22 @@ function App() {
           </span>
         </a>
         <div className="topbar-status" aria-live="polite">
-          <span className={`connection-dot connection-${updateMode === 'live' ? 'live' : !pollingAvailable ? 'error' : connection}`} />
-          <span>{updateMode === 'live' ? 'ОФІЦІЙНИЙ PUSH' : !pollingAvailable ? 'BACKEND НЕ НАЛАШТОВАНИЙ' : connection === 'live' ? 'ДАНІ ОНОВЛЮЮТЬСЯ' : connection === 'error' ? 'НЕМАЄ ЗВ’ЯЗКУ' : 'З’ЄДНАННЯ'}</span>
+          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : needsBackend ? 'error' : connection}`} />
+          <span>{usingOfficialLive ? 'ОФІЦІЙНИЙ PUSH' : needsBackend ? 'BACKEND НЕ НАЛАШТОВАНИЙ' : connection === 'live' ? usingStream ? 'ПОТІК NEPTUN' : 'ДАНІ ОНОВЛЮЮТЬСЯ' : connection === 'error' ? usingStream ? 'ПЕРЕПОДКЛЮЧЕННЯ' : 'НЕМАЄ ЗВ’ЯЗКУ' : 'З’ЄДНАННЯ'}</span>
         </div>
       </header>
 
-      <section className={`alert-banner ${updateMode === '20s' && activeCount > 0 && connection === 'live' ? 'has-alert' : ''}`} aria-live="polite">
+      <section className={`alert-banner${showThreatBanner ? ` has-alert level-${redCount ? 'red' : 'yellow'}` : ''}`} aria-live="polite">
         <div className="banner-icon">
-          {updateMode === 'live' ? <RadioTower size={22} /> : connection === 'live' && activeCount === 0 ? <CircleCheck size={22} /> : <ShieldAlert size={22} />}
+          {usingOfficialLive ? <RadioTower size={22} /> : feedReady && activeCount === 0 ? <CircleCheck size={22} /> : <ShieldAlert size={22} />}
         </div>
         <div className="banner-copy">
-          <span className="eyebrow">СТАН ПО ВСІЙ КРАЇНІ</span>
+          <span className="eyebrow">{showThreatBanner ? (redCount ? 'ЧЕРВОНИЙ РІВЕНЬ ЗАГРОЗИ' : 'ЖОВТИЙ РІВЕНЬ ЗАГРОЗИ') : 'СТАН ПО ВСІЙ КРАЇНІ'}</span>
           <h1>{headline}</h1>
         </div>
         <div className="banner-meta">
-          <div className="sync-time"><Clock3 size={15} /><span>{updateMode === 'live' ? 'ПОТІК ВІД ДЖЕРЕЛА' : `ОТРИМАНО ${formatTime(updatedAt)}`}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || updateMode === 'live' || !pollingAvailable} hidden={updateMode === 'live' || !pollingAvailable} aria-label="Оновити дані" title="Оновити дані">
+          <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? 'ПОТІК ВІД ДЖЕРЕЛА' : `ОТРИМАНО ${formatTime(updatedAt)}`}</span></div>
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingStream || usingOfficialLive || !pollingAvailable} hidden={usingStream || usingOfficialLive || !pollingAvailable} aria-label="Оновити дані" title="Оновити дані">
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -352,30 +538,35 @@ function App() {
       <div className="update-mode-bar">
         <div className="update-mode-copy">
           <span className="eyebrow">РЕЖИМ ОНОВЛЕННЯ</span>
-          <strong>{updateMode === 'live' ? 'Офіційна мапа з push-оновленнями' : pollingAvailable ? 'Автоматична перевірка кожні 20 секунд' : 'Для власної мапи потрібен backend'}</strong>
+          <strong>{usingOfficialLive ? 'Офіційна мапа з push-оновленнями' : usingStream ? 'Миттєва підписка на потік NEPTUN без нашого backend' : pollingAvailable ? 'Автоматична перевірка кожні 20 секунд' : 'Для власної мапи потрібен backend'}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label="Режим оновлення карти">
+          <button type="button" className={usingStream ? 'filter-active' : ''} aria-pressed={usingStream} onClick={() => setUpdateMode('ws')} title="Слухати потік NEPTUN: рівні тривог з’являються за кілька секунд">
+            <Zap size={14} /> Миттєво
+          </button>
           <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Показати нашу карту; оновлення запрацює після налаштування backend'}>
             <RefreshCw size={14} /> 20 сек
           </button>
-          <button type="button" className={updateMode === 'live' ? 'filter-active' : ''} aria-pressed={updateMode === 'live'} onClick={() => setUpdateMode('live')} title="Показати офіційну мапу з live-підпискою">
+          <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title="Показати офіційну мапу з live-підпискою">
             <RadioTower size={14} /> Наживо
           </button>
         </div>
       </div>
 
-      {!pollingAvailable && updateMode === '20s' && (
+      {needsBackend && (
         <div className="backend-notice" role="status">
           <WifiOff size={16} />
-          <span>Щоб оновлювати цю мапу, розгорніть backend на Render, додайте `ALERTS_IN_UA_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`.</span>
+          <span>Цей режим оновлює дані через наш backend: розгорніть його на Render, додайте `ALERTS_IN_UA_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`. Без backend лишіться режиму «Миттєво».</span>
         </div>
       )}
 
-      {pollingAvailable && connection === 'error' && updateMode === '20s' && (
+      {!usingOfficialLive && !needsBackend && connection === 'error' && (
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
-          <span>{updatedAt ? `Показано останні отримані дані станом на ${formatTime(updatedAt)}.` : 'Перевірте з’єднання та спробуйте оновити дані.'}</span>
-          <button type="button" onClick={() => void refresh()}>Повторити</button>
+          <span>{updatedAt
+            ? `Показано останні отримані дані станом на ${formatTime(updatedAt)}.`
+            : usingStream ? 'Потік NEPTUN недоступний: спробуйте режим «20 сек» або перевірте пізніше.' : 'Перевірте з’єднання та спробуйте оновити дані.'}</span>
+          {!usingStream && <button type="button" onClick={() => void refresh()}>Повторити</button>}
         </div>
       )}
 
@@ -397,7 +588,7 @@ function App() {
         />
       </section>
 
-      <div className={`workspace${updateMode === 'live' ? ' is-hidden' : ''}`} id="top">
+      <div className={`workspace${usingOfficialLive ? ' is-hidden' : ''}`} id="top">
         <section className="map-section" aria-labelledby="map-heading">
           <div className="section-heading">
             <div>
@@ -409,8 +600,8 @@ function App() {
 
           <div className="metric-strip" aria-label="Статистика активних загроз">
             <div><span>ПОТОЧНИХ</span><strong>{activeAlerts.length.toString().padStart(2, '0')}</strong></div>
-            <div><span>ПОВІТРЯНІ</span><strong>{airAlertCount.toString().padStart(2, '0')}</strong></div>
-            <div><span>ІНШІ ЗАГРОЗИ</span><strong>{otherThreatCount.toString().padStart(2, '0')}</strong></div>
+            <div><span>ЧЕРВОНИХ</span><strong>{redCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-yellow"><span>ЖОВТИХ</span><strong>{yellowCount.toString().padStart(2, '0')}</strong></div>
           </div>
 
           <div className="type-filter" role="group" aria-label="Фільтр за типом загрози">
@@ -423,16 +614,18 @@ function App() {
             <svg className="ukraine-map" viewBox={ukraineMap.viewBox} role="group" aria-label="Інтерактивна карта повітряних тривог України">
               {regions.map((region) => {
                 const state = statuses[region.id] ?? 'unknown'
+                const level = regionLevels[region.id]
+                const label = getRegionLabel(state, level)
                 const isSelected = selectedId === region.id
 
                 return (
                   <path
                     key={region.id}
-                    className={`region-shape state-${state}${isSelected ? ' is-selected' : ''}`}
+                    className={`region-shape state-${state}${level ? ` level-${level}` : ''}${isSelected ? ' is-selected' : ''}`}
                     d={region.path}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${region.title}: ${statusLabels[state]}`}
+                    aria-label={`${region.title}: ${label}`}
                     aria-pressed={isSelected}
                     onClick={() => setSelectedId(region.id)}
                     onKeyDown={(event) => {
@@ -442,7 +635,7 @@ function App() {
                       }
                     }}
                   >
-                    <title>{region.title} · {statusLabels[state]}</title>
+                    <title>{region.title} · {label}</title>
                   </path>
                 )
               })}
@@ -451,7 +644,8 @@ function App() {
           </div>
 
           <div className="map-legend" aria-label="Умовні позначення">
-            <span><i className="legend-dot legend-active" />Є тривога / загроза</span>
+            <span><i className="legend-dot legend-red" />Червона тривога</span>
+            <span><i className="legend-dot legend-yellow" />Жовта тривога</span>
             <span><i className="legend-dot legend-nominal" />Тривала позначка</span>
             <span><i className="legend-dot legend-clear" />Не вказано джерелом</span>
             {(connection === 'loading' || (connection === 'error' && !updatedAt)) && (
@@ -461,15 +655,18 @@ function App() {
 
           {selectedRegion && (
             <div className="selected-region" aria-live="polite">
-              <div className={`selected-indicator state-${statuses[selectedRegion.id] ?? 'unknown'}`} />
+              <div className={`selected-indicator state-${statuses[selectedRegion.id] ?? 'unknown'}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}`} />
               <div className="selected-region-copy">
                 <strong>{selectedRegion.title}</strong>
-                <span>{statusLabels[statuses[selectedRegion.id] ?? 'unknown']}</span>
-                {selectedAlerts.map((alert) => (
+                <span>{getRegionLabel(statuses[selectedRegion.id] ?? 'unknown', regionLevels[selectedRegion.id])}</span>
+                {selectedAlerts.slice(0, 5).map((alert) => (
                   <span key={`${alert.location}-${alert.type}`} className="selected-alert-type">
-                    {isStandingOccupiedAlert(alert) ? 'Тривала позначка · ' : ''}{alert.type}{alert.alertLevel ? ` · ${alert.alertLevel === 'yellow' ? 'жовтий' : 'червоний'} рівень` : ''} · {alert.startedAt} · {alert.duration}
+                    {isStandingOccupiedAlert(alert) ? 'Тривала позначка · ' : ''}{alert.location} · {alert.type} · {getAlertLevel(alert) === 'yellow' ? 'жовтий' : 'червоний'} рівень · {alert.startedAt} · {alert.duration}
                   </span>
                 ))}
+                {selectedAlerts.length > 5 && (
+                  <span className="selected-alert-type">і ще {selectedAlerts.length - 5} у цій області</span>
+                )}
               </div>
               <button
                 type="button"
@@ -486,7 +683,7 @@ function App() {
 
           <div className="map-caveat">
             <Activity size={14} />
-            <span>Мапа показує записи офіційної карти; відсутність позначки не гарантує безпеки. Звіряйтеся з офіційними сповіщеннями.</span>
+            <span>Мапа показує записи джерела, які можуть відставати від офіційних сповіщень; відсутність позначки не гарантує безпеки.</span>
           </div>
         </section>
 
@@ -511,7 +708,7 @@ function App() {
           </div>
 
           <div className="region-actions">
-            <button type="button" onClick={() => void toggleNotifications()} disabled={!('Notification' in window)} aria-pressed={notificationsEnabled} title={notificationsEnabled ? 'Вимкнути сповіщення' : 'Увімкнути сповіщення'}>
+            <button type="button" className={notificationsEnabled ? 'filter-active' : ''} onClick={() => void toggleNotifications()} disabled={!('Notification' in window)} aria-pressed={notificationsEnabled} title={notificationsEnabled ? 'Вимкнути сповіщення' : 'Увімкнути сповіщення'}>
               <Bell size={15} /> <span>{notificationsEnabled ? 'Сповіщення увімкнено' : 'Сповіщення'}</span>
             </button>
             <button type="button" onClick={exportAlerts} disabled={!typeFilteredAlerts.length} title="Експортувати відфільтровані загрози у CSV">
@@ -519,9 +716,35 @@ function App() {
             </button>
           </div>
 
+          <div className="region-actions notify-options" role="group" aria-label="Налаштування сповіщень">
+            <button
+              type="button"
+              className={notifyFavoritesOnly ? 'filter-active' : ''}
+              aria-pressed={notifyFavoritesOnly}
+              onClick={() => setNotifyFavoritesOnly((current) => !current)}
+              title="Реагувати лише на загрози в обраних регіонах"
+            >
+              <Star size={15} /> <span>Лише обрані ({favorites.length})</span>
+            </button>
+            <button
+              type="button"
+              className={notifySound ? 'filter-active' : ''}
+              aria-pressed={notifySound}
+              onClick={() => setNotifySound((current) => !current)}
+              title="Звук і вібрація при новій загрозі"
+            >
+              <Bell size={15} /> <span>Звук</span>
+            </button>
+          </div>
+
+          {notifyFavoritesOnly && favorites.length === 0 && (
+            <p className="notify-hint">Немає обраних регіонів, тож сповіщень не буде. Виберіть область на мапі й позначте зірочкою.</p>
+          )}
+
           <div className="region-list">
             {visibleRegions.map((region) => {
               const state = statuses[region.id] ?? 'unknown'
+              const level = regionLevels[region.id]
               return (
                 <button
                   key={region.id}
@@ -529,9 +752,9 @@ function App() {
                   type="button"
                   onClick={() => setSelectedId(region.id)}
                 >
-                  <span className={`row-marker state-${state}`} />
+                  <span className={`row-marker state-${state}${level ? ` level-${level}` : ''}`} />
                   <span className="row-name">{region.title}</span>
-                  <span className={`row-status status-label-${state}`}>{statusLabels[state]}</span>
+                  <span className={`row-status status-label-${state}${level ? ` level-${level}` : ''}`}>{getRegionLabel(state, level)}</span>
                   <ArrowUpRight size={14} className="row-arrow" />
                 </button>
               )
@@ -567,7 +790,10 @@ function App() {
 
       <footer className="app-footer">
         <p>Це інформаційна мапа, не офіційне сповіщення. У разі тривоги дотримуйтеся вказівок місцевої влади та прямуйте в укриття.</p>
-        <span>Межі: <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></span>
+        <span>
+          Межі: <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          {feedSource === 'neptun.in.ua' && <> · Дані: <a href="https://neptun.in.ua/" target="_blank" rel="noreferrer">Карта повітряних тривог — NEPTUN</a></>}
+        </span>
       </footer>
     </main>
   )

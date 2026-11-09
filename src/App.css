@@ -5,36 +5,6 @@
   padding: 0 42px;
 }
 
-.maintenance-banner {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 13px;
-  border: 1px solid #e6ca82;
-  border-left: 4px solid #b77b1c;
-  color: #674a13;
-  background: #fff3d4;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.maintenance-banner > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  align-items: baseline;
-}
-
-.maintenance-banner strong {
-  color: #583d0c;
-  font-weight: 700;
-}
-
-.maintenance-banner svg {
-  flex: 0 0 auto;
-}
-
 .topbar {
   min-height: 76px;
   display: flex;
@@ -126,6 +96,10 @@
 
 .alert-banner.has-alert {
   border-left-color: var(--alert);
+}
+
+.alert-banner.has-alert.level-yellow {
+  border-left-color: var(--map-yellow);
 }
 
 .banner-icon {
@@ -427,10 +401,20 @@
   fill: var(--map-active);
 }
 
+.region-shape.state-active.level-yellow {
+  fill: var(--map-yellow);
+}
+
 .region-shape.state-active:hover,
 .region-shape.state-active:focus-visible {
   fill: #c83e31;
   stroke: #76281f;
+}
+
+.region-shape.state-active.level-yellow:hover,
+.region-shape.state-active.level-yellow:focus-visible {
+  fill: #c8921f;
+  stroke: #6d4f0d;
 }
 
 .region-shape.state-nominal {
@@ -498,10 +482,16 @@
   background: var(--map-clear);
 }
 
-.legend-active,
+.legend-red,
 .row-marker.state-active,
 .selected-indicator.state-active {
   background: var(--map-active);
+}
+
+.legend-yellow,
+.row-marker.state-active.level-yellow,
+.selected-indicator.state-active.level-yellow {
+  background: var(--map-yellow);
 }
 
 .legend-nominal,
@@ -679,6 +669,10 @@
   font-weight: 700;
 }
 
+.status-label-active.level-yellow {
+  color: #9a7212;
+}
+
 .status-label-nominal {
   color: #68756e;
 }
@@ -756,6 +750,10 @@
   color: var(--alert);
 }
 
+.metric-yellow strong {
+  color: #a2760c;
+}
+
 .type-filter,
 .region-filters {
   display: flex;
@@ -792,7 +790,8 @@
 }
 
 .type-filter button.filter-active,
-.region-filters button.filter-active {
+.region-filters button.filter-active,
+.region-actions button.filter-active {
   color: var(--ink);
   background: #fff;
   box-shadow: 0 1px 3px #16231e18;
@@ -813,6 +812,20 @@
   display: flex;
   gap: 7px;
   margin: 9px 0 4px;
+}
+
+.notify-options {
+  margin-top: 4px;
+}
+
+.notify-hint {
+  margin: 6px 0 0;
+  padding: 6px 9px;
+  color: #804b15;
+  background: #fff3d9;
+  border-left: 3px solid #eed39b;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .region-actions button {
@@ -1043,8 +1056,6 @@
 
 @media (max-width: 760px) {
   .app-shell { padding: 0 18px; }
-  .maintenance-banner { align-items: flex-start; font-size: 11px; }
-  .maintenance-banner > div { display: grid; gap: 1px; }
   .topbar { min-height: 66px; }
   .topbar-status { font-size: 9px; }
   .alert-banner { min-height: 94px; margin-top: 18px; padding: 14px; gap: 11px; }
