@@ -8,7 +8,8 @@
 
 ## Alert Data
 
-- Use `alerts.in.ua` `/v1/alerts/active.json` through the backend when `ALERTS_IN_UA_TOKEN` is configured; otherwise keep the public `map.ukrainealarm.com` feed as fallback.
+- Default `Миттєво` mode subscribes the browser to NEPTUN `wss://neptun.in.ua/api/v1/stream` and applies `alerts` frames; `20 сек` polls our backend, which uses `alerts.in.ua` `/v1/alerts/active.json` when `ALERTS_IN_UA_TOKEN` is set and NEPTUN REST otherwise. Keep `shared/neptun-alerts.mjs` as the single normalizer for both paths and stay within one NEPTUN request per 5 seconds.
+- Render source `red` and `yellow` levels distinctly on the map, legend, region list, selected region, banner, CSV and notifications; an unrecognized or missing level is always shown as red, never as safe.
 - Normalize and deduplicate source data server-side, including parent-oblast mapping; never expose or copy authorization tokens into browser code or GitHub variables.
 - Do not substitute mock statuses for source data. The selected polling mode is every 20 seconds; preserve and label the last successful data when offline.
 - The live mode embeds the official map and its own push connection; do not copy or expose credentials from that page.
@@ -22,3 +23,4 @@
 
 - Map geometry comes from `@svg-maps/ukraine`, derived from MapSVG under CC BY 4.0.
 - Retain links to MapSVG and the CC BY 4.0 license in the interface and documentation.
+- When the fallback provider is active, keep the visible NEPTUN credit and link in the interface.

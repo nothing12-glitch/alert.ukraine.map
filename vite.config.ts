@@ -31,7 +31,7 @@ function officialAlertsFeed(apiToken: string): Plugin {
           response.end(JSON.stringify(feed))
         } catch {
           response.statusCode = 502
-          response.end(JSON.stringify({ error: 'Не вдалося отримати дані офіційної карти.' }))
+          response.end(JSON.stringify({ error: 'Не вдалося отримати дані джерела тривог.' }))
         } finally {
           pendingRequest = null
         }

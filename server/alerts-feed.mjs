@@ -1,39 +1,14 @@
-import { load } from 'cheerio'
+import { formatDuration, formatStartedAt, neptunAlertsUrl, normalizeNeptunFeed } from '../shared/neptun-alerts.mjs'
 
 const activeAlertsUrl = 'https://api.alerts.in.ua/v1/alerts/active.json'
+const neptunUserAgent = 'alert-ukraine-map/1.0 (informational air-alert map)'
+
 const alertTypeLabels = {
   air_raid: 'Повітряна тривога',
   artillery_shelling: 'Загроза артобстрілу',
   urban_fights: 'Вуличні бої',
   chemical: 'Хімічна загроза',
   nuclear: 'Радіаційна небезпека',
-}
-
-function formatStartedAt(value) {
-  const date = new Date(value)
-  if (Number.isNaN(date.valueOf())) return ''
-
-  return new Intl.DateTimeFormat('uk-UA', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-    timeZone: 'Europe/Kyiv',
-  }).format(date)
-}
-
-function formatDuration(startedAt) {
-  const startedAtMs = new Date(startedAt).getTime()
-  if (!Number.isFinite(startedAtMs)) return ''
-
-  const minutes = Math.max(0, Math.floor((Date.now() - startedAtMs) / 60_000))
-  const days = Math.floor(minutes / 1440)
-  const hours = Math.floor((minutes % 1440) / 60)
-  const remainingMinutes = minutes % 60
-  const parts = []
-
-  if (days) parts.push(`${days} д`)
-  if (hours) parts.push(`${hours} год`)
-  if (remainingMinutes || parts.length === 0) parts.push(`${remainingMinutes} хв`)
-  return parts.join(' ')
 }
 
 function normalizeApiAlert(alert) {
@@ -80,42 +55,21 @@ async function fetchAlertsInUa(token) {
   }
 }
 
-async function fetchPublicMap() {
-  const response = await fetch('https://map.ukrainealarm.com/', {
-    headers: { Accept: 'text/html' },
+async function fetchNeptunAlerts() {
+  const response = await fetch(neptunAlertsUrl, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': neptunUserAgent,
+    },
     signal: AbortSignal.timeout(12_000),
   })
 
-  if (!response.ok) throw new Error(`Official map returned HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`neptun.in.ua returned HTTP ${response.status}`)
 
-  const $ = load(await response.text())
-  const alertsByKey = new Map()
-
-  $('.city-item').each((_, element) => {
-    const card = $(element)
-    const location = card.find('.title').first().text().trim()
-    const type = card.find('.description').first().text().trim()
-    const startedAt = card.find('.time').first().text().trim()
-    const duration = card.find('.duration').first().text().trim()
-
-    if (!location || !type) return
-
-    const key = `${location.toLocaleLowerCase('uk')}|${type.toLocaleLowerCase('uk')}`
-    if (!alertsByKey.has(key)) alertsByKey.set(key, { location, region: location, type, startedAt, duration, alertLevel: '' })
-  })
-
-  if (alertsByKey.size === 0 && !$('.general-aside').length) {
-    throw new Error('The official map did not contain an alert feed')
-  }
-
-  return {
-    source: 'map.ukrainealarm.com',
-    fetchedAt: new Date().toISOString(),
-    alerts: [...alertsByKey.values()],
-  }
+  return normalizeNeptunFeed(await response.json())
 }
 
 export function fetchAlertsFeed(token = process.env.ALERTS_IN_UA_TOKEN) {
   const trimmedToken = token?.trim()
-  return trimmedToken ? fetchAlertsInUa(trimmedToken) : fetchPublicMap()
+  return trimmedToken ? fetchAlertsInUa(trimmedToken) : fetchNeptunAlerts()
 }
