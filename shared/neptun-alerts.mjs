@@ -42,6 +42,7 @@ export function normalizeNeptunAlert(entry) {
     region,
     type: neptunAlertType,
     startedAt: formatStartedAt(since),
+    startedAtIso: since,
     duration: since ? formatDuration(since) : '',
     // Нерозпізнаний рівень показуємо як червоний: недооцінка небезпеки гірша за переоцінку.
     alertLevel: String(entry.level ?? '').trim().toLowerCase() === 'yellow' ? 'yellow' : 'red',
@@ -49,12 +50,13 @@ export function normalizeNeptunAlert(entry) {
 }
 
 export function normalizeNeptunFeed(payload, fetchedAt = new Date().toISOString()) {
-  if (!Array.isArray(payload.raions) || !Array.isArray(payload.oblasts)) {
+  if (!Array.isArray(payload.oblasts)) {
     throw new Error('neptun.in.ua returned an invalid response')
   }
 
+  // Мапа має лише контури областей, тож районні тривоги не позначають область цілком.
   const alertsByKey = new Map()
-  for (const rawAlert of [...payload.raions, ...payload.oblasts]) {
+  for (const rawAlert of payload.oblasts) {
     const alert = normalizeNeptunAlert(rawAlert)
     if (!alert.location) continue
 

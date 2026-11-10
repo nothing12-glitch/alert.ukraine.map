@@ -10,7 +10,50 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid var(--line);
+}
+
+.topbar-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 18px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--line);
+  background: #e9efea;
+}
+
+.lang-switch button {
+  min-width: 34px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.lang-switch button:hover {
+  color: var(--teal);
+}
+
+.lang-switch button.lang-active {
+  color: #f1fff8;
+  background: var(--teal);
+}
+
+.lang-switch button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
 }
 
 .brand {
@@ -365,9 +408,23 @@
   place-items: center;
   overflow: hidden;
   border: 1px solid #d6e0d9;
+  user-select: none;
   background-color: #eaf0ec;
   background-image: linear-gradient(#dce5df 1px, transparent 1px), linear-gradient(90deg, #dce5df 1px, transparent 1px);
   background-size: 30px 30px;
+}
+
+.map-stage.is-zoomed {
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-stage.is-panning {
+  cursor: grabbing;
+}
+
+.map-stage.is-panning .region-shape {
+  cursor: grabbing;
 }
 
 .ukraine-map {
@@ -428,6 +485,78 @@
 .region-shape.is-selected {
   stroke: #16231e;
   stroke-width: 3.2px;
+}
+
+.region-outline-layer {
+  pointer-events: none;
+}
+
+.region-outline-halo,
+.region-outline-line {
+  fill: none;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.region-outline-halo {
+  stroke: #ffffff;
+  stroke-width: 7px;
+  opacity: 0.92;
+}
+
+.region-outline-line {
+  stroke: #101d18;
+  stroke-width: 2.6px;
+}
+
+.map-controls {
+  position: absolute;
+  top: 14px;
+  left: 15px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #aebdb4;
+  background: #f4f9f5e6;
+  backdrop-filter: blur(3px);
+  cursor: default;
+}
+
+.map-controls button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--teal);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+
+.map-controls button:hover:not(:disabled) {
+  border-color: #b9c9c0;
+  background: #e3eee7;
+}
+
+.map-controls button:focus-visible {
+  border-color: var(--teal);
+  outline: none;
+}
+
+.map-controls button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.map-zoom-level {
+  min-width: 38px;
+  padding-right: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-align: right;
 }
 
 .map-stamp {
@@ -1083,6 +1212,9 @@
 
 @media (max-width: 500px) {
   .app-shell { padding: 0 14px; }
+  .topbar { gap: 10px; }
+  .topbar-main { gap: 10px; }
+  .lang-switch button { min-width: 28px; padding: 3px 4px; font-size: 9px; }
   .topbar-status span:last-child { display: none; }
   .brand-mark { width: 34px; height: 34px; }
   .brand-copy strong { font-size: 11px; }

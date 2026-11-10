@@ -23,14 +23,35 @@ import {
   normalizeNeptunFeed,
   type NeptunAlertPayload,
 } from '../shared/neptun-alerts.mjs'
+import UkraineMap from './UkraineMap'
+import {
+  alertTypeLabel,
+  formatClock,
+  formatDateTime,
+  formatDuration,
+  languageOptions,
+  regionTitle,
+  regionWord,
+  translate,
+  type Language,
+  type MessageKey,
+} from './i18n'
+import { useI18n } from './i18n-context'
+import type { AlertState, ThreatLevel } from './map-types'
 import './App.css'
 
-type AlertState = 'active' | 'nominal' | 'clear' | 'unknown'
-type ThreatLevel = 'red' | 'yellow'
 type ConnectionState = 'loading' | 'live' | 'error'
 type SvgLocation = { id: string; name: string; path: string }
 type Region = SvgLocation & { title: string; reportTitle: string }
-type OfficialAlert = { location: string; region: string; type: string; startedAt: string; duration: string; alertLevel?: string }
+type OfficialAlert = {
+  location: string
+  region: string
+  type: string
+  startedAt: string
+  startedAtIso: string
+  duration: string
+  alertLevel?: string
+}
 type AlertFeed = { source: string; fetchedAt: string; alerts: OfficialAlert[] }
 type TypeFilter = 'all' | 'air' | 'other'
 type RegionFilter = 'all' | 'active' | 'favorite'
@@ -74,11 +95,16 @@ const regions: Region[] = (ukraineMap.locations as SvgLocation[]).map((location)
   ...(regionMetadata[location.id] ?? { title: location.name, reportTitle: location.name }),
 }))
 
-const statusLabels: Record<AlertState, string> = {
-  active: 'Є тривога або загроза',
-  nominal: 'Тривала адміністративна позначка',
-  clear: 'У джерелі не зазначено',
-  unknown: 'Немає даних',
+const statusKeys: Record<AlertState, MessageKey> = {
+  active: 'status.active',
+  nominal: 'status.nominal',
+  clear: 'status.clear',
+  unknown: 'status.unknown',
+}
+
+const levelKeys: Record<ThreatLevel, MessageKey> = {
+  red: 'level.red',
+  yellow: 'level.yellow',
 }
 
 const statusOrder: Record<AlertState, number> = {
@@ -86,11 +112,6 @@ const statusOrder: Record<AlertState, number> = {
   nominal: 1,
   clear: 2,
   unknown: 3,
-}
-
-const threatLevelLabels: Record<ThreatLevel, string> = {
-  red: 'Червона тривога',
-  yellow: 'Жовта тривога',
 }
 
 function normalizeLocation(value: string) {
@@ -137,10 +158,6 @@ function getRegionLevels(alerts: OfficialAlert[]) {
   ) as Record<string, ThreatLevel>
 }
 
-function getRegionLabel(state: AlertState, level?: ThreatLevel) {
-  return state === 'active' && level ? threatLevelLabels[level] : statusLabels[state]
-}
-
 function getAlertKey(alert: OfficialAlert) {
   return `${normalizeLocation(alert.location)}|${normalizeLocation(alert.type)}|${normalizeLocation(alert.alertLevel ?? '')}`
 }
@@ -149,7 +166,8 @@ function isStandingOccupiedAlert(alert: OfficialAlert) {
   const location = normalizeLocation(alert.region || alert.location)
   const isOccupiedArea = location === normalizeLocation('Луганська область')
     || location === normalizeLocation('Автономна Республіка Крим')
-  const durationDays = Number(alert.duration.match(/(\d+)\s*д/i)?.[1] ?? 0)
+  const startedAt = new Date(alert.startedAtIso).getTime()
+  const durationDays = Number.isFinite(startedAt) ? (Date.now() - startedAt) / 86_400_000 : 0
   return isOccupiedArea && durationDays >= 14
 }
 
@@ -186,17 +204,6 @@ function writeStored(key: string, value: unknown) {
   }
 }
 
-function formatTime(date: Date | null) {
-  if (!date) return 'очікування даних'
-
-  return new Intl.DateTimeFormat('uk-UA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: 'Europe/Kyiv',
-  }).format(date)
-}
-
 let alertAudioContext: AudioContext | null = null
 
 function playAlertTone() {
@@ -229,7 +236,7 @@ function vibrateDevice(pattern: number[]) {
   vibrate?.call(navigator, pattern)
 }
 
-function notifyAboutThreats(alerts: OfficialAlert[], soundEnabled: boolean, notificationsEnabled: boolean) {
+function notifyAboutThreats(alerts: OfficialAlert[], soundEnabled: boolean, notificationsEnabled: boolean, lang: Language) {
   if (soundEnabled) {
     playAlertTone()
     vibrateDevice([200, 90, 200])
@@ -237,15 +244,28 @@ function notifyAboutThreats(alerts: OfficialAlert[], soundEnabled: boolean, noti
 
   if (!notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return
 
+  const locationLabel = (alert: OfficialAlert) => {
+    const regionId = getAlertRegionId(alert)
+    return regionId
+      ? regionTitle(lang, regionId, regions.find((region) => region.id === regionId)?.title ?? alert.location)
+      : alert.location
+  }
+  const levelLabel = (alert: OfficialAlert) => `${translate(lang, getAlertLevel(alert) === 'yellow' ? 'levelWord.yellow' : 'levelWord.red')} ${translate(lang, 'level.word')}`
+
   const [first, ...rest] = alerts
-  const summary = `${first.location}: ${first.type} · ${getAlertLevel(first) === 'yellow' ? 'жовтий' : 'червоний'} рівень`
-  new Notification(rest.length ? `Нових загроз: ${alerts.length}` : `Загроза: ${first.location}`, {
-    body: rest.length ? `${summary}\nі ще ${rest.length} — відкрийте мапу` : summary,
+  const summary = translate(lang, 'notify.summary', {
+    location: locationLabel(first),
+    type: alertTypeLabel(lang, first.type),
+    level: levelLabel(first),
+  })
+  new Notification(rest.length ? translate(lang, 'notify.newCount', { count: alerts.length }) : translate(lang, 'notify.threat', { location: locationLabel(first) }), {
+    body: rest.length ? `${summary}\n${translate(lang, 'notify.more', { count: rest.length })}` : summary,
     tag: 'alert-map-new-threats',
   })
 }
 
 function App() {
+  const { lang, setLang, t } = useI18n()
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
   const [feedSource, setFeedSource] = useState('')
   const [connection, setConnection] = useState<ConnectionState>('loading')
@@ -267,19 +287,25 @@ function App() {
   const [notifyFavoritesOnly, setNotifyFavoritesOnly] = useState(() => readStored('alert-map-notify-favorites-only', false))
   const [notifySound, setNotifySound] = useState(() => readStored('alert-map-notify-sound', true))
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
-  const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites })
+  const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang })
 
   useEffect(() => {
-    notifySettings.current = { favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites }
-  }, [notifyFavoritesOnly, notifySound, favorites])
+    notifySettings.current = { favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang }
+  }, [notifyFavoritesOnly, notifySound, favorites, lang])
+
+  useEffect(() => {
+    document.title = t('app.title')
+  }, [t])
 
   const applyFeed = useCallback((feed: AlertFeed) => {
-    const currentAlerts = new Map(feed.alerts.map((alert) => [getAlertKey(alert), alert]))
+    // Показуємо лише області, які є на мапі: Seвастополь та інші окремі міста сюди не входять.
+    const feedAlerts = feed.alerts.filter((alert) => getAlertRegionId(alert) !== undefined)
+    const currentAlerts = new Map(feedAlerts.map((alert) => [getAlertKey(alert), alert]))
     const currentKeys = new Set(currentAlerts.keys())
     const previous = previousAlerts.current
 
     if (previous) {
-      const newAlerts = feed.alerts.filter((alert) => !previous.has(getAlertKey(alert)))
+      const newAlerts = feedAlerts.filter((alert) => !previous.has(getAlertKey(alert)))
       const endedAlerts = [...previous.values()].filter((alert) => !currentKeys.has(getAlertKey(alert)))
       const now = new Date().toISOString()
       const events: ActivityEvent[] = [
@@ -289,7 +315,7 @@ function App() {
 
       if (events.length) setActivityHistory((current) => [...events, ...current].slice(0, 40))
 
-      const { favoritesOnly, sound, favorites: favoriteIds } = notifySettings.current
+      const { favoritesOnly, sound, favorites: favoriteIds, lang: notificationLang } = notifySettings.current
       const threats = newAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
       const scopedThreats = favoritesOnly
         ? threats.filter((alert) => {
@@ -298,11 +324,11 @@ function App() {
           })
         : threats
 
-      if (scopedThreats.length) notifyAboutThreats(scopedThreats, sound, notificationsEnabled)
+      if (scopedThreats.length) notifyAboutThreats(scopedThreats, sound, notificationsEnabled, notificationLang)
     }
 
     previousAlerts.current = currentAlerts
-    setAlerts(feed.alerts)
+    setAlerts(feedAlerts)
     setFeedSource(feed.source)
     setUpdatedAt(new Date(feed.fetchedAt))
     setConnection('live')
@@ -416,6 +442,14 @@ function App() {
     ? getRegionStatuses(typeFilteredAlerts)
     : Object.fromEntries(regions.map((region) => [region.id, 'unknown'])) as Record<string, AlertState>
   const regionLevels = updatedAt ? getRegionLevels(typeFilteredAlerts) : {}
+  const regionLabels = Object.fromEntries(
+    regions.map((region) => {
+      const state = statuses[region.id] ?? 'unknown'
+      const level = regionLevels[region.id]
+      const label = state === 'active' && level ? t(levelKeys[level]) : t(statusKeys[state])
+      return [region.id, label]
+    }),
+  ) as Record<string, string>
   const activeAlerts = typeFilteredAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
   const standingAlertCount = typeFilteredAlerts.filter(isStandingOccupiedAlert).length
   const activeCount = new Set(activeAlerts.map((alert) => normalizeLocation(alert.region || alert.location))).size
@@ -428,10 +462,17 @@ function App() {
     ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.region || alert.location) === normalizeLocation(selectedRegion.title))
     : []
   const sourceUrl = feedSource === 'neptun.in.ua' ? 'https://neptun.in.ua/' : 'https://alerts.in.ua/'
+  const displayTitle = useCallback((region: Region) => regionTitle(lang, region.id, region.title), [lang])
+  const displayAlertLocation = useCallback((alert: OfficialAlert) => {
+    const regionId = getAlertRegionId(alert)
+    const region = regionId ? regions.find((item) => item.id === regionId) : undefined
+    return region ? regionTitle(lang, region.id, region.title) : alert.location
+  }, [lang])
   const visibleRegions = [...regions]
     .filter((region) => {
       const state = statuses[region.id] ?? 'unknown'
-      const matchesSearch = region.title.toLocaleLowerCase('uk').includes(search.trim().toLocaleLowerCase('uk'))
+      const matchesSearch = displayTitle(region).toLocaleLowerCase(lang).includes(search.trim().toLocaleLowerCase(lang))
+        || region.title.toLocaleLowerCase('uk').includes(search.trim().toLocaleLowerCase('uk'))
       const matchesStatus = regionFilter !== 'active' || state === 'active'
       const matchesFavorite = regionFilter !== 'favorite' || favorites.includes(region.id)
       return matchesSearch && matchesStatus && matchesFavorite
@@ -441,7 +482,7 @@ function App() {
       const rightStatus = statuses[right.id] ?? 'unknown'
       const leftRank = regionLevels[left.id] === 'yellow' ? 1 : 0
       const rightRank = regionLevels[right.id] === 'yellow' ? 1 : 0
-      return statusOrder[leftStatus] - statusOrder[rightStatus] || leftRank - rightRank || left.title.localeCompare(right.title, 'uk')
+      return statusOrder[leftStatus] - statusOrder[rightStatus] || leftRank - rightRank || displayTitle(left).localeCompare(displayTitle(right), lang)
     })
 
   const usingStream = updateMode === 'ws'
@@ -450,22 +491,21 @@ function App() {
   const feedReady = !needsBackend && connection === 'live'
 
   const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
-
   const headline = usingOfficialLive
-    ? 'Офіційна карта працює в режимі наживо'
+    ? t('headline.official')
     : needsBackend
-      ? 'Підключіть backend для даних нашої мапи'
-    : connection === 'loading'
-      ? usingStream ? 'Підключаємось до потоку NEPTUN' : 'Синхронізуємо поточний стан'
-      : connection === 'error'
-        ? usingStream
-          ? updatedAt ? 'Потік розірвано, триває перепідключення' : 'Не вдалося підключитися до потоку NEPTUN'
-          : updatedAt ? 'Немає зв’язку з джерелом' : 'Не вдалося отримати дані'
-        : activeCount > 0
-          ? redCount
-            ? `Червоний рівень загрози у ${redCount} регіонах`
-            : `Жовтий рівень загрози у ${yellowCount} регіонах`
-          : 'Активних загроз не зафіксовано'
+      ? t('headline.needsBackend')
+      : connection === 'loading'
+        ? usingStream ? t('headline.connectingStream') : t('headline.syncing')
+        : connection === 'error'
+          ? usingStream
+            ? updatedAt ? t('headline.streamInterrupted') : t('headline.streamFailed')
+            : updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
+          : activeCount > 0
+            ? redCount
+              ? t('headline.red', { count: redCount, regions: regionWord(lang, redCount, 'locative') })
+              : t('headline.yellow', { count: yellowCount, regions: regionWord(lang, yellowCount, 'locative') })
+            : t('headline.none')
 
   const toggleFavorite = (regionId: string) => {
     setFavorites((current) => current.includes(regionId)
@@ -489,8 +529,14 @@ function App() {
   const exportAlerts = () => {
     const escapeCell = (value: string) => `"${value.replaceAll('"', '""')}"`
     const rows = [
-      ['Місце', 'Загроза', 'Рівень', 'Початок за джерелом', 'Тривалість за джерелом'],
-      ...typeFilteredAlerts.map((alert) => [alert.location, alert.type, getAlertLevel(alert) === 'yellow' ? 'жовтий' : 'червоний', alert.startedAt, alert.duration]),
+      [t('csv.location'), t('csv.threat'), t('csv.level'), t('csv.started'), t('csv.duration')],
+      ...typeFilteredAlerts.map((alert) => [
+        displayAlertLocation(alert),
+        alertTypeLabel(lang, alert.type),
+        translate(lang, getAlertLevel(alert) === 'yellow' ? 'levelWord.yellow' : 'levelWord.red'),
+        formatDateTime(lang, alert.startedAtIso),
+        formatDuration(lang, alert.startedAtIso),
+      ]),
     ]
     const csv = rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')
     const link = document.createElement('a')
@@ -506,16 +552,33 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Повітряна мапа України">
-          <span className="brand-mark"><RadioTower size={20} strokeWidth={2.2} /></span>
-          <span className="brand-copy">
-            <strong>ПОВІТРЯНА МАПА</strong>
-            <span>УКРАЇНА · LIVE</span>
-          </span>
-        </a>
+        <div className="topbar-main">
+          <a className="brand" href="#top" aria-label={t('brand.aria')}>
+            <span className="brand-mark"><RadioTower size={20} strokeWidth={2.2} /></span>
+            <span className="brand-copy">
+              <strong>{t('brand.title')}</strong>
+              <span>{t('brand.subtitle')}</span>
+            </span>
+          </a>
+          <nav className="lang-switch" aria-label={t('lang.aria')}>
+            {languageOptions.map((option) => (
+              <button
+                key={option.code}
+                type="button"
+                className={lang === option.code ? 'lang-active' : ''}
+                aria-pressed={lang === option.code}
+                title={option.name}
+                lang={option.code}
+                onClick={() => setLang(option.code)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </nav>
+        </div>
         <div className="topbar-status" aria-live="polite">
           <span className={`connection-dot connection-${usingOfficialLive ? 'live' : needsBackend ? 'error' : connection}`} />
-          <span>{usingOfficialLive ? 'ОФІЦІЙНИЙ PUSH' : needsBackend ? 'BACKEND НЕ НАЛАШТОВАНИЙ' : connection === 'live' ? usingStream ? 'ПОТІК NEPTUN' : 'ДАНІ ОНОВЛЮЮТЬСЯ' : connection === 'error' ? usingStream ? 'ПЕРЕПОДКЛЮЧЕННЯ' : 'НЕМАЄ ЗВ’ЯЗКУ' : 'З’ЄДНАННЯ'}</span>
+          <span>{usingOfficialLive ? t('conn.official') : needsBackend ? t('conn.needsBackend') : connection === 'live' ? usingStream ? t('conn.stream') : t('conn.polling') : connection === 'error' ? usingStream ? t('conn.reconnecting') : t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 
@@ -524,12 +587,12 @@ function App() {
           {usingOfficialLive ? <RadioTower size={22} /> : feedReady && activeCount === 0 ? <CircleCheck size={22} /> : <ShieldAlert size={22} />}
         </div>
         <div className="banner-copy">
-          <span className="eyebrow">{showThreatBanner ? (redCount ? 'ЧЕРВОНИЙ РІВЕНЬ ЗАГРОЗИ' : 'ЖОВТИЙ РІВЕНЬ ЗАГРОЗИ') : 'СТАН ПО ВСІЙ КРАЇНІ'}</span>
+          <span className="eyebrow">{showThreatBanner ? (redCount ? t('banner.red') : t('banner.yellow')) : t('banner.country')}</span>
           <h1>{headline}</h1>
         </div>
         <div className="banner-meta">
-          <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? 'ПОТІК ВІД ДЖЕРЕЛА' : `ОТРИМАНО ${formatTime(updatedAt)}`}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingStream || usingOfficialLive || !pollingAvailable} hidden={usingStream || usingOfficialLive || !pollingAvailable} aria-label="Оновити дані" title="Оновити дані">
+          <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? t('banner.stream') : updatedAt ? t('banner.received', { time: formatClock(lang, updatedAt.toISOString()) }) : t('banner.waiting')}</span></div>
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingStream || usingOfficialLive || !pollingAvailable} hidden={usingStream || usingOfficialLive || !pollingAvailable} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -537,18 +600,18 @@ function App() {
 
       <div className="update-mode-bar">
         <div className="update-mode-copy">
-          <span className="eyebrow">РЕЖИМ ОНОВЛЕННЯ</span>
-          <strong>{usingOfficialLive ? 'Офіційна мапа з push-оновленнями' : usingStream ? 'Миттєва підписка на потік NEPTUN без нашого backend' : pollingAvailable ? 'Автоматична перевірка кожні 20 секунд' : 'Для власної мапи потрібен backend'}</strong>
+          <span className="eyebrow">{t('mode.eyebrow')}</span>
+          <strong>{usingOfficialLive ? t('mode.official') : usingStream ? t('mode.stream') : pollingAvailable ? t('mode.polling') : t('mode.needsBackend')}</strong>
         </div>
-        <div className="update-mode-control" role="group" aria-label="Режим оновлення карти">
-          <button type="button" className={usingStream ? 'filter-active' : ''} aria-pressed={usingStream} onClick={() => setUpdateMode('ws')} title="Слухати потік NEPTUN: рівні тривог з’являються за кілька секунд">
-            <Zap size={14} /> Миттєво
+        <div className="update-mode-control" role="group" aria-label={t('mode.aria')}>
+          <button type="button" className={usingStream ? 'filter-active' : ''} aria-pressed={usingStream} onClick={() => setUpdateMode('ws')} title={t('mode.instantHint')}>
+            <Zap size={14} /> {t('mode.instant')}
           </button>
-          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} title={pollingAvailable ? 'Оновлювати через backend кожні 20 секунд' : 'Показати нашу карту; оновлення запрацює після налаштування backend'}>
-            <RefreshCw size={14} /> 20 сек
+          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} title={pollingAvailable ? t('mode.pollingHint') : t('mode.pollingUnavailableHint')}>
+            <RefreshCw size={14} /> {t('mode.20s')}
           </button>
-          <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title="Показати офіційну мапу з live-підпискою">
-            <RadioTower size={14} /> Наживо
+          <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title={t('mode.liveHint')}>
+            <RadioTower size={14} /> {t('mode.live')}
           </button>
         </div>
       </div>
@@ -556,7 +619,7 @@ function App() {
       {needsBackend && (
         <div className="backend-notice" role="status">
           <WifiOff size={16} />
-          <span>Цей режим оновлює дані через наш backend: розгорніть його на Render, додайте `ALERTS_IN_UA_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`. Без backend лишіться режиму «Миттєво».</span>
+          <span>{t('mode.backendNotice')}</span>
         </div>
       )}
 
@@ -564,24 +627,24 @@ function App() {
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
           <span>{updatedAt
-            ? `Показано останні отримані дані станом на ${formatTime(updatedAt)}.`
-            : usingStream ? 'Потік NEPTUN недоступний: спробуйте режим «20 сек» або перевірте пізніше.' : 'Перевірте з’єднання та спробуйте оновити дані.'}</span>
-          {!usingStream && <button type="button" onClick={() => void refresh()}>Повторити</button>}
+            ? t('stale.withData', { time: formatClock(lang, updatedAt.toISOString()) })
+            : usingStream ? t('stale.stream') : t('stale.polling')}</span>
+          {!usingStream && <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>}
         </div>
       )}
 
-      <section className="official-live-view" hidden={updateMode !== 'live'} aria-label="Офіційна мапа наживо">
+      <section className="official-live-view" hidden={updateMode !== 'live'} aria-label={t('live.aria')}>
         <div className="official-live-heading">
           <div>
-            <span className="eyebrow">ПРЯМА ПІДПИСКА ДЖЕРЕЛА</span>
-            <h2>Офіційна карта повітряних тривог</h2>
+            <span className="eyebrow">{t('live.eyebrow')}</span>
+            <h2>{t('live.title')}</h2>
           </div>
-          <a href="https://map.ukrainealarm.com/" target="_blank" rel="noreferrer">Відкрити окремо <ArrowUpRight size={14} /></a>
+          <a href="https://map.ukrainealarm.com/" target="_blank" rel="noreferrer">{t('live.open')} <ArrowUpRight size={14} /></a>
         </div>
         <iframe
           className="official-live-frame"
           src="https://map.ukrainealarm.com/"
-          title="Офіційна карта повітряних тривог України наживо"
+          title={t('live.frame')}
           loading="lazy"
           referrerPolicy="strict-origin-when-cross-origin"
           allow="fullscreen"
@@ -592,64 +655,41 @@ function App() {
         <section className="map-section" aria-labelledby="map-heading">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ</span>
-              <h2 id="map-heading">Карта областей</h2>
+              <span className="eyebrow">{t('map.eyebrow')}</span>
+              <h2 id="map-heading">{t('map.title')}</h2>
             </div>
-            <div className="map-count"><MapPinned size={16} /><span>{regions.length} регіонів</span></div>
+            <div className="map-count"><MapPinned size={16} /><span>{t('regions.count', { count: regions.length, regions: regionWord(lang, regions.length) })}</span></div>
           </div>
 
-          <div className="metric-strip" aria-label="Статистика активних загроз">
-            <div><span>ПОТОЧНИХ</span><strong>{activeAlerts.length.toString().padStart(2, '0')}</strong></div>
-            <div><span>ЧЕРВОНИХ</span><strong>{redCount.toString().padStart(2, '0')}</strong></div>
-            <div className="metric-yellow"><span>ЖОВТИХ</span><strong>{yellowCount.toString().padStart(2, '0')}</strong></div>
+          <div className="metric-strip" aria-label={t('map.statsAria')}>
+            <div><span>{t('map.current')}</span><strong>{activeAlerts.length.toString().padStart(2, '0')}</strong></div>
+            <div><span>{t('map.red')}</span><strong>{redCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-yellow"><span>{t('map.yellow')}</span><strong>{yellowCount.toString().padStart(2, '0')}</strong></div>
           </div>
 
-          <div className="type-filter" role="group" aria-label="Фільтр за типом загрози">
-            <button type="button" className={typeFilter === 'all' ? 'filter-active' : ''} onClick={() => setTypeFilter('all')}>Усі <span>{alerts.length}</span></button>
-            <button type="button" className={typeFilter === 'air' ? 'filter-active' : ''} onClick={() => setTypeFilter('air')}>Повітряні <span>{airAlertCount}</span></button>
-            <button type="button" className={typeFilter === 'other' ? 'filter-active' : ''} onClick={() => setTypeFilter('other')}>Інші <span>{otherThreatCount}</span></button>
+          <div className="type-filter" role="group" aria-label={t('filter.typeAria')}>
+            <button type="button" className={typeFilter === 'all' ? 'filter-active' : ''} onClick={() => setTypeFilter('all')}>{t('filter.all')} <span>{alerts.length}</span></button>
+            <button type="button" className={typeFilter === 'air' ? 'filter-active' : ''} onClick={() => setTypeFilter('air')}>{t('filter.air')} <span>{airAlertCount}</span></button>
+            <button type="button" className={typeFilter === 'other' ? 'filter-active' : ''} onClick={() => setTypeFilter('other')}>{t('filter.other')} <span>{otherThreatCount}</span></button>
           </div>
 
-          <div className="map-stage">
-            <svg className="ukraine-map" viewBox={ukraineMap.viewBox} role="group" aria-label="Інтерактивна карта повітряних тривог України">
-              {regions.map((region) => {
-                const state = statuses[region.id] ?? 'unknown'
-                const level = regionLevels[region.id]
-                const label = getRegionLabel(state, level)
-                const isSelected = selectedId === region.id
+          <UkraineMap
+            regions={regions.map((region) => ({ ...region, title: displayTitle(region) }))}
+            statuses={statuses}
+            levels={regionLevels}
+            labels={regionLabels}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            viewBox={ukraineMap.viewBox}
+          />
 
-                return (
-                  <path
-                    key={region.id}
-                    className={`region-shape state-${state}${level ? ` level-${level}` : ''}${isSelected ? ' is-selected' : ''}`}
-                    d={region.path}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${region.title}: ${label}`}
-                    aria-pressed={isSelected}
-                    onClick={() => setSelectedId(region.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setSelectedId(region.id)
-                      }
-                    }}
-                  >
-                    <title>{region.title} · {label}</title>
-                  </path>
-                )
-              })}
-            </svg>
-            <div className="map-stamp"><span>UA</span><span>48° 23′ N<br />31° 10′ E</span></div>
-          </div>
-
-          <div className="map-legend" aria-label="Умовні позначення">
-            <span><i className="legend-dot legend-red" />Червона тривога</span>
-            <span><i className="legend-dot legend-yellow" />Жовта тривога</span>
-            <span><i className="legend-dot legend-nominal" />Тривала позначка</span>
-            <span><i className="legend-dot legend-clear" />Не вказано джерелом</span>
+          <div className="map-legend" aria-label={t('legend.aria')}>
+            <span><i className="legend-dot legend-red" />{t('level.red')}</span>
+            <span><i className="legend-dot legend-yellow" />{t('level.yellow')}</span>
+            <span><i className="legend-dot legend-nominal" />{t('legend.nominal')}</span>
+            <span><i className="legend-dot legend-clear" />{t('legend.clear')}</span>
             {(connection === 'loading' || (connection === 'error' && !updatedAt)) && (
-              <span><i className="legend-dot legend-unknown" />{connection === 'loading' ? 'Завантаження' : 'Немає даних'}</span>
+              <span><i className="legend-dot legend-unknown" />{connection === 'loading' ? t('legend.loading') : t('legend.noData')}</span>
             )}
           </div>
 
@@ -657,88 +697,89 @@ function App() {
             <div className="selected-region" aria-live="polite">
               <div className={`selected-indicator state-${statuses[selectedRegion.id] ?? 'unknown'}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}`} />
               <div className="selected-region-copy">
-                <strong>{selectedRegion.title}</strong>
-                <span>{getRegionLabel(statuses[selectedRegion.id] ?? 'unknown', regionLevels[selectedRegion.id])}</span>
+                <strong>{displayTitle(selectedRegion)}</strong>
+                <span>{regionLabels[selectedRegion.id]}</span>
                 {selectedAlerts.slice(0, 5).map((alert) => (
                   <span key={`${alert.location}-${alert.type}`} className="selected-alert-type">
-                    {isStandingOccupiedAlert(alert) ? 'Тривала позначка · ' : ''}{alert.location} · {alert.type} · {getAlertLevel(alert) === 'yellow' ? 'жовтий' : 'червоний'} рівень · {alert.startedAt} · {alert.duration}
+                    {isStandingOccupiedAlert(alert) ? t('selected.markerPrefix') : ''}
+                    {displayAlertLocation(alert)} · {alertTypeLabel(lang, alert.type)} · {translate(lang, getAlertLevel(alert) === 'yellow' ? 'levelWord.yellow' : 'levelWord.red')} {t('level.word')} · {formatDateTime(lang, alert.startedAtIso)} · {formatDuration(lang, alert.startedAtIso)}
                   </span>
                 ))}
                 {selectedAlerts.length > 5 && (
-                  <span className="selected-alert-type">і ще {selectedAlerts.length - 5} у цій області</span>
+                  <span className="selected-alert-type">{t('selected.more', { count: selectedAlerts.length - 5 })}</span>
                 )}
               </div>
               <button
                 type="button"
                 className={`favorite-button${favorites.includes(selectedRegion.id) ? ' is-favorite' : ''}`}
                 onClick={() => toggleFavorite(selectedRegion.id)}
-                aria-label={favorites.includes(selectedRegion.id) ? 'Вилучити з обраного' : 'Додати до обраного'}
-                title={favorites.includes(selectedRegion.id) ? 'Вилучити з обраного' : 'Додати до обраного'}
+                aria-label={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
+                title={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
               >
                 <Star size={16} fill={favorites.includes(selectedRegion.id) ? 'currentColor' : 'none'} />
               </button>
-              <button type="button" className="clear-selection" onClick={() => setSelectedId(null)} aria-label="Зняти вибір області">×</button>
+              <button type="button" className="clear-selection" onClick={() => setSelectedId(null)} aria-label={t('selected.clear')}>×</button>
             </div>
           )}
 
           <div className="map-caveat">
             <Activity size={14} />
-            <span>Мапа показує записи джерела, які можуть відставати від офіційних сповіщень; відсутність позначки не гарантує безпеки.</span>
+            <span>{t('caveat')}</span>
           </div>
         </section>
 
         <aside className="region-panel" aria-labelledby="regions-heading">
           <div className="region-panel-heading">
             <div>
-              <span className="eyebrow">ПЕРЕЛІК</span>
-              <h2 id="regions-heading">Регіони</h2>
+              <span className="eyebrow">{t('panel.eyebrow')}</span>
+              <h2 id="regions-heading">{t('panel.title')}</h2>
             </div>
-            <span className="active-counter">{activeCount.toString().padStart(2, '0')} <small>регіонів</small></span>
+            <span className="active-counter">{activeCount.toString().padStart(2, '0')} <small>{regionWord(lang, activeCount)}</small></span>
           </div>
 
           <label className="search-box">
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Знайти область" aria-label="Знайти область" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('panel.search')} aria-label={t('panel.search')} />
           </label>
 
-          <div className="region-filters" role="group" aria-label="Фільтр регіонів">
-            <button type="button" className={regionFilter === 'all' ? 'filter-active' : ''} onClick={() => setRegionFilter('all')}>Усі</button>
-            <button type="button" className={regionFilter === 'active' ? 'filter-active' : ''} onClick={() => setRegionFilter('active')}>Зі статусом</button>
-            <button type="button" className={regionFilter === 'favorite' ? 'filter-active' : ''} onClick={() => setRegionFilter('favorite')}>Обрані <span>{favorites.length}</span></button>
+          <div className="region-filters" role="group" aria-label={t('panel.filterAria')}>
+            <button type="button" className={regionFilter === 'all' ? 'filter-active' : ''} onClick={() => setRegionFilter('all')}>{t('panel.filterAll')}</button>
+            <button type="button" className={regionFilter === 'active' ? 'filter-active' : ''} onClick={() => setRegionFilter('active')}>{t('panel.filterActive')}</button>
+            <button type="button" className={regionFilter === 'favorite' ? 'filter-active' : ''} onClick={() => setRegionFilter('favorite')}>{t('panel.favorites')} <span>{favorites.length}</span></button>
           </div>
 
           <div className="region-actions">
-            <button type="button" className={notificationsEnabled ? 'filter-active' : ''} onClick={() => void toggleNotifications()} disabled={!('Notification' in window)} aria-pressed={notificationsEnabled} title={notificationsEnabled ? 'Вимкнути сповіщення' : 'Увімкнути сповіщення'}>
-              <Bell size={15} /> <span>{notificationsEnabled ? 'Сповіщення увімкнено' : 'Сповіщення'}</span>
+            <button type="button" className={notificationsEnabled ? 'filter-active' : ''} onClick={() => void toggleNotifications()} disabled={!('Notification' in window)} aria-pressed={notificationsEnabled} title={notificationsEnabled ? t('panel.notificationsOnHint') : t('panel.notificationsOffHint')}>
+              <Bell size={15} /> <span>{notificationsEnabled ? t('panel.notificationsOn') : t('panel.notifications')}</span>
             </button>
-            <button type="button" onClick={exportAlerts} disabled={!typeFilteredAlerts.length} title="Експортувати відфільтровані загрози у CSV">
+            <button type="button" onClick={exportAlerts} disabled={!typeFilteredAlerts.length} title={t('panel.csvHint')}>
               <Download size={15} /> <span>CSV</span>
             </button>
           </div>
 
-          <div className="region-actions notify-options" role="group" aria-label="Налаштування сповіщень">
+          <div className="region-actions notify-options" role="group" aria-label={t('panel.notifyAria')}>
             <button
               type="button"
               className={notifyFavoritesOnly ? 'filter-active' : ''}
               aria-pressed={notifyFavoritesOnly}
               onClick={() => setNotifyFavoritesOnly((current) => !current)}
-              title="Реагувати лише на загрози в обраних регіонах"
+              title={t('panel.favOnlyHint')}
             >
-              <Star size={15} /> <span>Лише обрані ({favorites.length})</span>
+              <Star size={15} /> <span>{t('panel.favOnly', { count: favorites.length })}</span>
             </button>
             <button
               type="button"
               className={notifySound ? 'filter-active' : ''}
               aria-pressed={notifySound}
               onClick={() => setNotifySound((current) => !current)}
-              title="Звук і вібрація при новій загрозі"
+              title={t('panel.soundHint')}
             >
-              <Bell size={15} /> <span>Звук</span>
+              <Bell size={15} /> <span>{t('panel.sound')}</span>
             </button>
           </div>
 
           {notifyFavoritesOnly && favorites.length === 0 && (
-            <p className="notify-hint">Немає обраних регіонів, тож сповіщень не буде. Виберіть область на мапі й позначте зірочкою.</p>
+            <p className="notify-hint">{t('panel.notifyHint')}</p>
           )}
 
           <div className="region-list">
@@ -753,46 +794,46 @@ function App() {
                   onClick={() => setSelectedId(region.id)}
                 >
                   <span className={`row-marker state-${state}${level ? ` level-${level}` : ''}`} />
-                  <span className="row-name">{region.title}</span>
-                  <span className={`row-status status-label-${state}${level ? ` level-${level}` : ''}`}>{getRegionLabel(state, level)}</span>
+                  <span className="row-name">{displayTitle(region)}</span>
+                  <span className={`row-status status-label-${state}${level ? ` level-${level}` : ''}`}>{regionLabels[region.id]}</span>
                   <ArrowUpRight size={14} className="row-arrow" />
                 </button>
               )
             })}
-            {visibleRegions.length === 0 && <p className="empty-results">Область не знайдена</p>}
+            {visibleRegions.length === 0 && <p className="empty-results">{t('panel.empty')}</p>}
           </div>
 
           <div className="region-panel-footer">
-            <div className="feed-summary"><span>{standingAlertCount}</span><p>тривалі адміністративні позначки на окупованих територіях показуються окремо від поточних загроз</p></div>
+            <div className="feed-summary"><span>{standingAlertCount}</span><p>{t('panel.standing', { count: standingAlertCount })}</p></div>
             <a href={sourceUrl} target="_blank" rel="noreferrer" className="source-link">
-              <Wifi size={14} /> {feedSource ? `Джерело: ${feedSource}` : 'alerts.in.ua API'} <ArrowUpRight size={13} />
+              <Wifi size={14} /> {t('panel.source', { source: feedSource || 'alerts.in.ua API' })} <ArrowUpRight size={13} />
             </a>
           </div>
 
           <details className="activity-panel">
-            <summary><History size={15} /> Журнал змін <span>{activityHistory.length}</span></summary>
+            <summary><History size={15} /> {t('panel.log')} <span>{activityHistory.length}</span></summary>
             <div className="activity-list">
               {activityHistory.map((event) => (
                 <div className="activity-event" key={event.id}>
                   <i className={event.action === 'new' ? 'event-new' : 'event-ended'} />
                   <div>
-                    <strong>{event.action === 'new' ? 'Нова загроза' : 'Загрозу знято'}</strong>
-                    <span>{event.alert.location} · {event.alert.type}</span>
-                    <time>{formatTime(new Date(event.at))}</time>
+                    <strong>{event.action === 'new' ? t('panel.logNew') : t('panel.logEnded')}</strong>
+                    <span>{displayAlertLocation(event.alert)} · {alertTypeLabel(lang, event.alert.type)}</span>
+                    <time>{formatClock(lang, event.at)}</time>
                   </div>
                 </div>
               ))}
-              {activityHistory.length === 0 && <p>Зміни з’являться після наступного оновлення джерела.</p>}
+              {activityHistory.length === 0 && <p>{t('panel.logEmpty')}</p>}
             </div>
           </details>
         </aside>
       </div>
 
       <footer className="app-footer">
-        <p>Це інформаційна мапа, не офіційне сповіщення. У разі тривоги дотримуйтеся вказівок місцевої влади та прямуйте в укриття.</p>
+        <p>{t('footer.disclaimer')}</p>
         <span>
-          Межі: <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
-          {feedSource === 'neptun.in.ua' && <> · Дані: <a href="https://neptun.in.ua/" target="_blank" rel="noreferrer">Карта повітряних тривог — NEPTUN</a></>}
+          {t('footer.borders')} <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          {feedSource === 'neptun.in.ua' && <> · {t('footer.data')} <a href="https://neptun.in.ua/" target="_blank" rel="noreferrer">{t('footer.neptunSource')}</a></>}
         </span>
       </footer>
     </main>

@@ -3,6 +3,7 @@ export interface OfficialAlert {
   region: string
   type: string
   startedAt: string
+  startedAtIso: string
   duration: string
   alertLevel: string
 }
