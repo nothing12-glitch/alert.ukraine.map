@@ -12,6 +12,12 @@ export const languageStorageKey = 'alert-map-language'
 
 export function readLanguage(): Language {
   try {
+    const fromUrl = new URLSearchParams(window.location.search).get('lang')
+    if (fromUrl === 'en' || fromUrl === 'pl' || fromUrl === 'uk') return fromUrl
+  } catch {
+    // URL недоступний у нестандартному середовищі — далі пробуємо localStorage.
+  }
+  try {
     const stored = window.localStorage.getItem(languageStorageKey)
     return stored === 'en' || stored === 'pl' || stored === 'uk' ? stored : 'uk'
   } catch {

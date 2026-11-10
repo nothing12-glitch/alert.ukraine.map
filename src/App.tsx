@@ -3,16 +3,22 @@ import {
   Activity,
   ArrowUpRight,
   Bell,
+  Check,
   CircleCheck,
   Clock3,
+  Copy,
   Download,
   History,
+  Layers,
   MapPinned,
+  Maximize2,
+  Moon,
   RadioTower,
   RefreshCw,
   Search,
   ShieldAlert,
   Star,
+  Sun,
   Wifi,
   WifiOff,
   Zap,
@@ -26,6 +32,7 @@ import {
 import UkraineMap from './UkraineMap'
 import {
   alertTypeLabel,
+  districtWord,
   formatClock,
   formatDateTime,
   formatDuration,
@@ -43,9 +50,11 @@ import './App.css'
 type ConnectionState = 'loading' | 'live' | 'error'
 type SvgLocation = { id: string; name: string; path: string }
 type Region = SvgLocation & { title: string; reportTitle: string }
+type AlertScope = 'oblast' | 'raion'
 type OfficialAlert = {
   location: string
   region: string
+  scope?: AlertScope
   type: string
   startedAt: string
   startedAtIso: string
@@ -56,7 +65,9 @@ type AlertFeed = { source: string; fetchedAt: string; alerts: OfficialAlert[] }
 type TypeFilter = 'all' | 'air' | 'other'
 type RegionFilter = 'all' | 'active' | 'favorite'
 type UpdateMode = 'ws' | '20s' | 'live'
+type Theme = 'light' | 'dark'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
+type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
 const pollingAvailable = import.meta.env.DEV || Boolean(apiBaseUrl)
@@ -97,6 +108,7 @@ const regions: Region[] = (ukraineMap.locations as SvgLocation[]).map((location)
 
 const statusKeys: Record<AlertState, MessageKey> = {
   active: 'status.active',
+  partial: 'status.partial',
   nominal: 'status.nominal',
   clear: 'status.clear',
   unknown: 'status.unknown',
@@ -109,9 +121,10 @@ const levelKeys: Record<ThreatLevel, MessageKey> = {
 
 const statusOrder: Record<AlertState, number> = {
   active: 0,
-  nominal: 1,
-  clear: 2,
-  unknown: 3,
+  partial: 1,
+  nominal: 2,
+  clear: 3,
+  unknown: 4,
 }
 
 function normalizeLocation(value: string) {
@@ -123,39 +136,43 @@ function getAlertLevel(alert: OfficialAlert): ThreatLevel {
   return alert.alertLevel?.toLowerCase() === 'yellow' ? 'yellow' : 'red'
 }
 
-function getRegionStatuses(alerts: OfficialAlert[]) {
-  const activeLocations = new Set(alerts.filter((alert) => !isStandingOccupiedAlert(alert)).map((alert) => normalizeLocation(alert.region || alert.location)))
-  const nominalLocations = new Set(alerts.filter(isStandingOccupiedAlert).map((alert) => normalizeLocation(alert.region || alert.location)))
-  return Object.fromEntries(
-    regions.map((region) => [
-      region.id,
-      activeLocations.has(normalizeLocation(region.title)) || activeLocations.has(normalizeLocation(region.reportTitle))
-        ? 'active'
-        : nominalLocations.has(normalizeLocation(region.title)) || nominalLocations.has(normalizeLocation(region.reportTitle))
-          ? 'nominal'
-          : 'clear',
-    ]),
-  ) as Record<string, AlertState>
+function getAlertScope(alert: OfficialAlert): AlertScope {
+  if (alert.scope) return alert.scope
+  return normalizeLocation(alert.location) === normalizeLocation(alert.region) ? 'oblast' : 'raion'
 }
 
-function getRegionLevels(alerts: OfficialAlert[]) {
-  const levelByLocation = new Map<string, ThreatLevel>()
+function worstLevel(current: ThreatLevel | undefined, next: ThreatLevel): ThreatLevel {
+  return current === 'red' || next === 'red' ? 'red' : 'yellow'
+}
+
+type RegionSummary = {
+  wholeLevel?: ThreatLevel
+  partialLevel?: ThreatLevel
+  nominal: boolean
+  raions: OfficialAlert[]
+}
+
+function summarizeRegions(alerts: OfficialAlert[]) {
+  const summaries: Record<string, RegionSummary> = {}
 
   for (const alert of alerts) {
-    if (isStandingOccupiedAlert(alert)) continue
-    const location = normalizeLocation(alert.region || alert.location)
+    const regionId = getAlertRegionId(alert)
+    if (!regionId) continue
+
+    const summary = (summaries[regionId] ??= { nominal: false, raions: [] })
     const level = getAlertLevel(alert)
-    if (level === 'yellow' && levelByLocation.get(location) === 'red') continue
-    levelByLocation.set(location, level)
+
+    if (getAlertScope(alert) === 'raion') {
+      summary.partialLevel = worstLevel(summary.partialLevel, level)
+      summary.raions.push(alert)
+    } else if (isStandingOccupiedAlert(alert)) {
+      summary.nominal = true
+    } else {
+      summary.wholeLevel = worstLevel(summary.wholeLevel, level)
+    }
   }
 
-  return Object.fromEntries(
-    regions.flatMap((region) => {
-      const level = levelByLocation.get(normalizeLocation(region.title))
-        ?? levelByLocation.get(normalizeLocation(region.reportTitle))
-      return level ? [[region.id, level] as [string, ThreatLevel]] : []
-    }),
-  ) as Record<string, ThreatLevel>
+  return summaries
 }
 
 function getAlertKey(alert: OfficialAlert) {
@@ -264,6 +281,19 @@ function notifyAboutThreats(alerts: OfficialAlert[], soundEnabled: boolean, noti
   })
 }
 
+function readInitialRegion() {
+  const regionId = new URLSearchParams(window.location.search).get('region')
+  return regionId && regions.some((region) => region.id === regionId) ? regionId : null
+}
+
+function readInitialTheme(): Theme {
+  const fromUrl = new URLSearchParams(window.location.search).get('theme')
+  if (fromUrl === 'light' || fromUrl === 'dark') return fromUrl
+  const stored = readStored<Theme | null>('alert-map-theme', null)
+  if (stored === 'light' || stored === 'dark') return stored
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 function App() {
   const { lang, setLang, t } = useI18n()
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
@@ -271,8 +301,14 @@ function App() {
   const [connection, setConnection] = useState<ConnectionState>('loading')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(readInitialRegion)
+  const [focusRequest, setFocusRequest] = useState<{ regionId: string; token: number } | null>(null)
+  const [theme, setTheme] = useState<Theme>(readInitialTheme)
+  const [toast, setToast] = useState<{ id: string; events: ToastEvent[] } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [, setTick] = useState(0)
   const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
   const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
@@ -297,6 +333,32 @@ function App() {
     document.title = t('app.title')
   }, [t])
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    writeStored('alert-map-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedId) params.set('region', selectedId)
+    else params.delete('region')
+    params.set('lang', lang)
+    params.set('theme', theme)
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+  }, [selectedId, lang, theme])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 9000)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
+  // Тривалість тривог показуємо від часу джерела, тож перемальовуємо її періодично.
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((current) => current + 1), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const applyFeed = useCallback((feed: AlertFeed) => {
     // Показуємо лише області, які є на мапі: Seвастополь та інші окремі міста сюди не входять.
     const feedAlerts = feed.alerts.filter((alert) => getAlertRegionId(alert) !== undefined)
@@ -313,7 +375,10 @@ function App() {
         ...endedAlerts.map((alert, index) => ({ id: `ended-${now}-${index}`, action: 'ended' as const, alert, at: now })),
       ]
 
-      if (events.length) setActivityHistory((current) => [...events, ...current].slice(0, 40))
+      if (events.length) {
+        setActivityHistory((current) => [...events, ...current].slice(0, 40))
+        setToast({ id: now, events: events.slice(0, 4) })
+      }
 
       const { favoritesOnly, sound, favorites: favoriteIds, lang: notificationLang } = notifySettings.current
       const threats = newAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
@@ -438,29 +503,62 @@ function App() {
     if (typeFilter === 'other') return !isAirAlert(alert)
     return true
   })
-  const statuses = updatedAt
-    ? getRegionStatuses(typeFilteredAlerts)
-    : Object.fromEntries(regions.map((region) => [region.id, 'unknown'])) as Record<string, AlertState>
-  const regionLevels = updatedAt ? getRegionLevels(typeFilteredAlerts) : {}
+  const summaries = updatedAt ? summarizeRegions(typeFilteredAlerts) : {}
+  const statuses = Object.fromEntries(
+    regions.map((region): [string, AlertState] => {
+      if (!updatedAt) return [region.id, 'unknown']
+      const summary = summaries[region.id]
+      const state: AlertState = summary?.wholeLevel
+        ? 'active'
+        : summary?.partialLevel
+          ? 'partial'
+          : summary?.nominal
+            ? 'nominal'
+            : 'clear'
+      return [region.id, state]
+    }),
+  ) as Record<string, AlertState>
+  const regionLevels = Object.fromEntries(
+    regions.flatMap((region): [string, ThreatLevel][] => {
+      const summary = summaries[region.id]
+      if (!summary) return []
+      const level = summary.wholeLevel && summary.partialLevel
+        ? worstLevel(summary.wholeLevel, summary.partialLevel)
+        : summary.wholeLevel ?? summary.partialLevel
+      return level ? [[region.id, level]] : []
+    }),
+  ) as Record<string, ThreatLevel>
+  const partialCounts = Object.fromEntries(
+    regions.flatMap((region): [string, number][] => {
+      const count = summaries[region.id]?.raions.length ?? 0
+      return count ? [[region.id, count]] : []
+    }),
+  ) as Record<string, number>
   const regionLabels = Object.fromEntries(
     regions.map((region) => {
       const state = statuses[region.id] ?? 'unknown'
       const level = regionLevels[region.id]
-      const label = state === 'active' && level ? t(levelKeys[level]) : t(statusKeys[state])
+      const count = partialCounts[region.id]
+      const label = state === 'active' && level
+        ? t(levelKeys[level])
+        : state === 'partial' && count
+          ? `${t('status.partial')} · ${count}`
+          : t(statusKeys[state])
       return [region.id, label]
     }),
   ) as Record<string, string>
-  const activeAlerts = typeFilteredAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
   const standingAlertCount = typeFilteredAlerts.filter(isStandingOccupiedAlert).length
-  const activeCount = new Set(activeAlerts.map((alert) => normalizeLocation(alert.region || alert.location))).size
+  const raionAlertCount = typeFilteredAlerts.filter((alert) => getAlertScope(alert) === 'raion').length
+  const activeCount = regions.filter((region) => statuses[region.id] === 'active' || statuses[region.id] === 'partial').length
   const redCount = Object.values(regionLevels).filter((level) => level === 'red').length
-  const yellowCount = Object.values(regionLevels).filter((level) => level === 'yellow').length
-  const airAlertCount = activeAlerts.filter(isAirAlert).length
-  const otherThreatCount = activeAlerts.length - airAlertCount
+  const partialRegionCount = Object.keys(partialCounts).length
+  const airAlertCount = typeFilteredAlerts.filter(isAirAlert).length
+  const otherThreatCount = typeFilteredAlerts.length - airAlertCount
   const selectedRegion = regions.find((region) => region.id === selectedId)
   const selectedAlerts = selectedRegion
-    ? typeFilteredAlerts.filter((alert) => normalizeLocation(alert.region || alert.location) === normalizeLocation(selectedRegion.title))
+    ? typeFilteredAlerts.filter((alert) => getAlertRegionId(alert) === selectedRegion.id && getAlertScope(alert) === 'oblast')
     : []
+  const selectedRaions = selectedRegion ? summaries[selectedRegion.id]?.raions ?? [] : []
   const sourceUrl = feedSource === 'neptun.in.ua' ? 'https://neptun.in.ua/' : 'https://alerts.in.ua/'
   const displayTitle = useCallback((region: Region) => regionTitle(lang, region.id, region.title), [lang])
   const displayAlertLocation = useCallback((alert: OfficialAlert) => {
@@ -473,7 +571,7 @@ function App() {
       const state = statuses[region.id] ?? 'unknown'
       const matchesSearch = displayTitle(region).toLocaleLowerCase(lang).includes(search.trim().toLocaleLowerCase(lang))
         || region.title.toLocaleLowerCase('uk').includes(search.trim().toLocaleLowerCase('uk'))
-      const matchesStatus = regionFilter !== 'active' || state === 'active'
+      const matchesStatus = regionFilter !== 'active' || state === 'active' || state === 'partial'
       const matchesFavorite = regionFilter !== 'favorite' || favorites.includes(region.id)
       return matchesSearch && matchesStatus && matchesFavorite
     })
@@ -491,6 +589,8 @@ function App() {
   const feedReady = !needsBackend && connection === 'live'
 
   const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
+  const wholeRedCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'red').length
+  const wholeYellowCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'yellow').length
   const headline = usingOfficialLive
     ? t('headline.official')
     : needsBackend
@@ -502,9 +602,11 @@ function App() {
             ? updatedAt ? t('headline.streamInterrupted') : t('headline.streamFailed')
             : updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
           : activeCount > 0
-            ? redCount
-              ? t('headline.red', { count: redCount, regions: regionWord(lang, redCount, 'locative') })
-              : t('headline.yellow', { count: yellowCount, regions: regionWord(lang, yellowCount, 'locative') })
+            ? wholeRedCount
+              ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
+              : wholeYellowCount
+                ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
+                : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
             : t('headline.none')
 
   const toggleFavorite = (regionId: string) => {
@@ -512,6 +614,62 @@ function App() {
       ? current.filter((id) => id !== regionId)
       : [...current, regionId])
   }
+
+  const focusRegion = (regionId: string) => {
+    setSelectedId(regionId)
+    setFocusRequest({ regionId, token: Date.now() })
+  }
+
+  const copySummary = async (region?: Region) => {
+    const scopedRegions = region
+      ? [region]
+      : regions.filter((item) => statuses[item.id] === 'active' || statuses[item.id] === 'partial')
+    const lines = [t('app.title')]
+
+    if (!scopedRegions.length) lines.push(t('headline.none'))
+    for (const item of scopedRegions) {
+      const parts = [displayTitle(item), regionLabels[item.id]]
+      if (statuses[item.id] === 'partial') {
+        const districts = (summaries[item.id]?.raions ?? []).map((alert) => alert.location)
+        if (districts.length) {
+          parts.push(`${districts.slice(0, 6).join(', ')}${districts.length > 6 ? ` +${districts.length - 6}` : ''}`)
+        }
+      }
+      lines.push(`• ${parts.join(' · ')}`)
+    }
+    lines.push('', window.location.href)
+
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Без Clipboard API залишається ручне копіювання зі списку.
+    }
+  }
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isTyping = Boolean(target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable))
+      if (event.key === 'Escape') {
+        if (isTyping) {
+          target?.blur()
+          setSearch('')
+        } else {
+          setSelectedId(null)
+        }
+        return
+      }
+      if (isTyping) return
+      if (event.key === '/') {
+        event.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
 
   const toggleNotifications = async () => {
     if (notificationsEnabled) {
@@ -575,12 +733,40 @@ function App() {
               </button>
             ))}
           </nav>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            aria-label={theme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
         </div>
         <div className="topbar-status" aria-live="polite">
           <span className={`connection-dot connection-${usingOfficialLive ? 'live' : needsBackend ? 'error' : connection}`} />
           <span>{usingOfficialLive ? t('conn.official') : needsBackend ? t('conn.needsBackend') : connection === 'live' ? usingStream ? t('conn.stream') : t('conn.polling') : connection === 'error' ? usingStream ? t('conn.reconnecting') : t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
+
+      {toast && (
+        <div className="alert-toast" role="status" aria-live="polite">
+          <div className="toast-head">
+            <Zap size={15} />
+            <strong>{t(toast.events[0].action === 'new' ? 'toast.new' : 'toast.ended')}</strong>
+            <button type="button" className="toast-dismiss" onClick={() => setToast(null)} aria-label={t('toast.dismiss')}>×</button>
+          </div>
+          <ul>
+            {toast.events.map((event) => (
+              <li key={event.id}>
+                <i className={event.action === 'new' ? 'event-new' : 'event-ended'} />
+                <span>{displayAlertLocation(event.alert)} · {alertTypeLabel(lang, event.alert.type)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <section className={`alert-banner${showThreatBanner ? ` has-alert level-${redCount ? 'red' : 'yellow'}` : ''}`} aria-live="polite">
         <div className="banner-icon">
@@ -591,6 +777,15 @@ function App() {
           <h1>{headline}</h1>
         </div>
         <div className="banner-meta">
+          {partialRegionCount > 0 && (
+            <div className="banner-partial" title={t('banner.partialHint')}>
+              <Layers size={15} />
+              <span>{t('banner.partial', {
+                regions: `${partialRegionCount} ${regionWord(lang, partialRegionCount, 'genitive')}`,
+                districts: `${raionAlertCount} ${districtWord(lang, raionAlertCount)}`,
+              })}</span>
+            </div>
+          )}
           <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? t('banner.stream') : updatedAt ? t('banner.received', { time: formatClock(lang, updatedAt.toISOString()) }) : t('banner.waiting')}</span></div>
           <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingStream || usingOfficialLive || !pollingAvailable} hidden={usingStream || usingOfficialLive || !pollingAvailable} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
@@ -662,13 +857,14 @@ function App() {
           </div>
 
           <div className="metric-strip" aria-label={t('map.statsAria')}>
-            <div><span>{t('map.current')}</span><strong>{activeAlerts.length.toString().padStart(2, '0')}</strong></div>
-            <div><span>{t('map.red')}</span><strong>{redCount.toString().padStart(2, '0')}</strong></div>
-            <div className="metric-yellow"><span>{t('map.yellow')}</span><strong>{yellowCount.toString().padStart(2, '0')}</strong></div>
+            <div><span>{t('map.current')}</span><strong>{activeCount.toString().padStart(2, '0')}</strong></div>
+            <div><span>{t('map.red')}</span><strong>{wholeRedCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-yellow"><span>{t('map.yellow')}</span><strong>{wholeYellowCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-partial" title={t('map.partialHint')}><span>{t('map.partial')}</span><strong>{partialRegionCount.toString().padStart(2, '0')}</strong></div>
           </div>
 
           <div className="type-filter" role="group" aria-label={t('filter.typeAria')}>
-            <button type="button" className={typeFilter === 'all' ? 'filter-active' : ''} onClick={() => setTypeFilter('all')}>{t('filter.all')} <span>{alerts.length}</span></button>
+            <button type="button" className={typeFilter === 'all' ? 'filter-active' : ''} onClick={() => setTypeFilter('all')}>{t('filter.all')} <span>{typeFilteredAlerts.length}</span></button>
             <button type="button" className={typeFilter === 'air' ? 'filter-active' : ''} onClick={() => setTypeFilter('air')}>{t('filter.air')} <span>{airAlertCount}</span></button>
             <button type="button" className={typeFilter === 'other' ? 'filter-active' : ''} onClick={() => setTypeFilter('other')}>{t('filter.other')} <span>{otherThreatCount}</span></button>
           </div>
@@ -677,15 +873,19 @@ function App() {
             regions={regions.map((region) => ({ ...region, title: displayTitle(region) }))}
             statuses={statuses}
             levels={regionLevels}
+            partialCounts={partialCounts}
             labels={regionLabels}
             selectedId={selectedId}
+            focusRequest={focusRequest}
             onSelect={setSelectedId}
+            onFocusRegion={focusRegion}
             viewBox={ukraineMap.viewBox}
           />
 
           <div className="map-legend" aria-label={t('legend.aria')}>
             <span><i className="legend-dot legend-red" />{t('level.red')}</span>
             <span><i className="legend-dot legend-yellow" />{t('level.yellow')}</span>
+            <span><i className="legend-dot legend-partial" />{t('legend.partial')}</span>
             <span><i className="legend-dot legend-nominal" />{t('legend.nominal')}</span>
             <span><i className="legend-dot legend-clear" />{t('legend.clear')}</span>
             {(connection === 'loading' || (connection === 'error' && !updatedAt)) && (
@@ -708,17 +908,52 @@ function App() {
                 {selectedAlerts.length > 5 && (
                   <span className="selected-alert-type">{t('selected.more', { count: selectedAlerts.length - 5 })}</span>
                 )}
+                {selectedRaions.length > 0 && (
+                  <div className="raion-block" title={t('selected.raionsHint')}>
+                    <span className="raion-heading">{t('selected.raions', { districts: `${selectedRaions.length} ${districtWord(lang, selectedRaions.length)}` })}</span>
+                    <div className="raion-chips">
+                      {selectedRaions.slice(0, 12).map((alert) => (
+                        <span key={`${alert.location}-${alert.type}`} className={`raion-chip level-${getAlertLevel(alert)}`}>
+                          {alert.location}
+                        </span>
+                      ))}
+                      {selectedRaions.length > 12 && (
+                        <span className="raion-chip raion-more">+{selectedRaions.length - 12}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                className={`favorite-button${favorites.includes(selectedRegion.id) ? ' is-favorite' : ''}`}
-                onClick={() => toggleFavorite(selectedRegion.id)}
-                aria-label={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
-                title={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
-              >
-                <Star size={16} fill={favorites.includes(selectedRegion.id) ? 'currentColor' : 'none'} />
-              </button>
-              <button type="button" className="clear-selection" onClick={() => setSelectedId(null)} aria-label={t('selected.clear')}>×</button>
+              <div className="selected-actions">
+                <button
+                  type="button"
+                  className="selected-action"
+                  onClick={() => focusRegion(selectedRegion.id)}
+                  aria-label={t('selected.zoom')}
+                  title={t('selected.zoom')}
+                >
+                  <Maximize2 size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={`selected-action${copied ? ' is-copied' : ''}`}
+                  onClick={() => void copySummary(selectedRegion)}
+                  aria-label={t('selected.copy')}
+                  title={copied ? t('selected.copied') : t('selected.copy')}
+                >
+                  {copied ? <Check size={15} /> : <Copy size={15} />}
+                </button>
+                <button
+                  type="button"
+                  className={`favorite-button${favorites.includes(selectedRegion.id) ? ' is-favorite' : ''}`}
+                  onClick={() => toggleFavorite(selectedRegion.id)}
+                  aria-label={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
+                  title={favorites.includes(selectedRegion.id) ? t('selected.removeFav') : t('selected.addFav')}
+                >
+                  <Star size={16} fill={favorites.includes(selectedRegion.id) ? 'currentColor' : 'none'} />
+                </button>
+                <button type="button" className="clear-selection" onClick={() => setSelectedId(null)} aria-label={t('selected.clear')}>×</button>
+              </div>
             </div>
           )}
 
@@ -737,9 +972,21 @@ function App() {
             <span className="active-counter">{activeCount.toString().padStart(2, '0')} <small>{regionWord(lang, activeCount)}</small></span>
           </div>
 
-          <label className="search-box">
+          <label className="search-box" title={t('panel.searchHint')}>
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('panel.search')} aria-label={t('panel.search')} />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t('panel.search')}
+              aria-label={t('panel.search')}
+              aria-keyshortcuts="/"
+            />
+            {search && (
+              <button type="button" className="search-clear" onClick={() => setSearch('')} aria-label={t('panel.clearSearch')}>
+                ×
+              </button>
+            )}
           </label>
 
           <div className="region-filters" role="group" aria-label={t('panel.filterAria')}>
@@ -755,7 +1002,18 @@ function App() {
             <button type="button" onClick={exportAlerts} disabled={!typeFilteredAlerts.length} title={t('panel.csvHint')}>
               <Download size={15} /> <span>CSV</span>
             </button>
+            <button
+              type="button"
+              onClick={() => void copySummary()}
+              className={copied ? 'is-copied' : ''}
+              title={copied ? t('selected.copied') : t('panel.copySummaryHint')}
+              aria-label={t('panel.copySummary')}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />} <span>{t('panel.copySummary')}</span>
+            </button>
           </div>
+
+          <p className="panel-shortcuts">{t('panel.shortcuts')}</p>
 
           <div className="region-actions notify-options" role="group" aria-label={t('panel.notifyAria')}>
             <button

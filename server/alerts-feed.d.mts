@@ -1,6 +1,7 @@
 export interface OfficialAlert {
   location: string
   region: string
+  scope: 'oblast' | 'raion'
   type: string
   startedAt: string
   startedAtIso: string

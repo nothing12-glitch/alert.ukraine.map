@@ -10,9 +10,12 @@ export interface NeptunAlertPayload {
   oblasts?: NeptunAlertEntry[]
 }
 
+export type AlertScope = 'oblast' | 'raion'
+
 export interface NormalizedAlert {
   location: string
   region: string
+  scope: AlertScope
   type: string
   startedAt: string
   startedAtIso: string
@@ -33,5 +36,5 @@ export const neptunAlertType: string
 
 export function formatStartedAt(value: string): string
 export function formatDuration(startedAt: string): string
-export function normalizeNeptunAlert(entry: NeptunAlertEntry): NormalizedAlert
+export function normalizeNeptunAlert(entry: NeptunAlertEntry, scope?: AlertScope): NormalizedAlert
 export function normalizeNeptunFeed(payload: NeptunAlertPayload, fetchedAt?: string): NormalizedFeed

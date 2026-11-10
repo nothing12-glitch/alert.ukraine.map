@@ -32,7 +32,7 @@ export function formatDuration(startedAt) {
   return parts.join(' ')
 }
 
-export function normalizeNeptunAlert(entry) {
+export function normalizeNeptunAlert(entry, scope = 'oblast') {
   const location = String(entry.name ?? '').trim()
   const region = String(entry.oblast ?? '').trim() || location
   const since = String(entry.since ?? '')
@@ -40,6 +40,7 @@ export function normalizeNeptunAlert(entry) {
   return {
     location,
     region,
+    scope,
     type: neptunAlertType,
     startedAt: formatStartedAt(since),
     startedAtIso: since,
@@ -50,20 +51,23 @@ export function normalizeNeptunAlert(entry) {
 }
 
 export function normalizeNeptunFeed(payload, fetchedAt = new Date().toISOString()) {
-  if (!Array.isArray(payload.oblasts)) {
+  if (!Array.isArray(payload.oblasts) || !Array.isArray(payload.raions)) {
     throw new Error('neptun.in.ua returned an invalid response')
   }
 
-  // Мапа має лише контури областей, тож районні тривоги не позначають область цілком.
   const alertsByKey = new Map()
-  for (const rawAlert of payload.oblasts) {
-    const alert = normalizeNeptunAlert(rawAlert)
-    if (!alert.location) continue
+  const addAlert = (rawAlert, scope) => {
+    const alert = normalizeNeptunAlert(rawAlert, scope)
+    if (!alert.location || (scope === 'raion' && !alert.region)) return
 
-    const key = `${alert.region.toLocaleLowerCase('uk')}|${alert.location.toLocaleLowerCase('uk')}`
+    const key = `${scope}|${alert.region.toLocaleLowerCase('uk')}|${alert.location.toLocaleLowerCase('uk')}`
     const known = alertsByKey.get(key)
     if (!known || (known.alertLevel === 'yellow' && alert.alertLevel === 'red')) alertsByKey.set(key, alert)
   }
+
+  // Обласні тривоги фарбують область цілком, районні — лише позначають її частково.
+  for (const rawAlert of payload.oblasts) addAlert(rawAlert, 'oblast')
+  for (const rawAlert of payload.raions) addAlert(rawAlert, 'raion')
 
   return {
     source: neptunSource,

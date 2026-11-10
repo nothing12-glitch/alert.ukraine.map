@@ -15,10 +15,12 @@ function normalizeApiAlert(alert) {
   const location = String(alert.location_title ?? '').trim()
   const region = String(alert.location_oblast ?? '').trim() || location
   const startedAtValue = String(alert.started_at ?? '')
+  const scope = location.toLocaleLowerCase('uk') === region.toLocaleLowerCase('uk') ? 'oblast' : 'raion'
 
   return {
     location,
     region,
+    scope,
     type: alertTypeLabels[alert.alert_type] ?? String(alert.alert_type ?? 'Інша загроза'),
     startedAt: formatStartedAt(startedAtValue),
     startedAtIso: startedAtValue,
@@ -45,9 +47,7 @@ async function fetchAlertsInUa(token) {
   for (const rawAlert of payload.alerts) {
     const alert = normalizeApiAlert(rawAlert)
     if (!alert.location || !alert.type) continue
-    // Лише тривоги на всю область: районні записи не фарбують область цілком.
-    if (alert.location.toLocaleLowerCase('uk') !== alert.region.toLocaleLowerCase('uk')) continue
-    const key = `${alert.region.toLocaleLowerCase('uk')}|${alert.location.toLocaleLowerCase('uk')}|${alert.type}`
+    const key = `${alert.scope}|${alert.region.toLocaleLowerCase('uk')}|${alert.location.toLocaleLowerCase('uk')}|${alert.type}`
     if (!alertsByKey.has(key)) alertsByKey.set(key, alert)
   }
 

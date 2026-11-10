@@ -26,6 +26,22 @@
   color-scheme: light;
 }
 
+:root[data-theme='dark'] {
+  --canvas: #0e1714;
+  --ink: #e4eee8;
+  --muted: #8fa39a;
+  --line: #2a3d36;
+  --teal: #74d3ae;
+  --alert: #f26a54;
+  --map-active: #d95a43;
+  --map-yellow: #d8a52f;
+  --map-clear: #2c423a;
+  --map-nominal: #506a5f;
+  --map-unknown: #35473f;
+
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -37,6 +53,10 @@ body {
   background-color: var(--canvas);
   background-image: radial-gradient(#d9e1db 0.7px, transparent 0.7px);
   background-size: 16px 16px;
+}
+
+:root[data-theme='dark'] body {
+  background-image: radial-gradient(#22332d 0.7px, transparent 0.7px);
 }
 
 button,

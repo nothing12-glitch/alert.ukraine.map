@@ -101,6 +101,21 @@ const messages = {
     en: 'Yellow threat level in {count} {regions}',
     pl: 'Żółty poziom zagrożenia w {count} {regions}',
   },
+  'headline.partial': {
+    uk: 'Тривога частково у {count} {regions}',
+    en: 'Partial alerts in {count} {regions}',
+    pl: 'Częściowe alarmy w {count} {regions}',
+  },
+  'banner.partial': {
+    uk: 'Частково: {regions} · {districts}',
+    en: 'Partial: {regions} · {districts}',
+    pl: 'Częściowo: {regions} · {districts}',
+  },
+  'banner.partialHint': {
+    uk: 'Тривога оголошена лише в окремих районах цих областей',
+    en: 'The alert covers only some districts of these regions',
+    pl: 'Alarm obejmuje tylko niektóre rejony tych obwodów',
+  },
   'headline.none': {
     uk: 'Активних загроз не зафіксовано',
     en: 'No active threats recorded',
@@ -227,6 +242,22 @@ const messages = {
   'map.current': { uk: 'ПОТОЧНИХ', en: 'CURRENT', pl: 'BIEŻĄCE' },
   'map.red': { uk: 'ЧЕРВОНИХ', en: 'RED', pl: 'CZERWONE' },
   'map.yellow': { uk: 'ЖОВТИХ', en: 'YELLOW', pl: 'ŻÓŁTE' },
+  'map.partial': { uk: 'ЧАСТКОВИХ', en: 'PARTIAL', pl: 'CZĘŚCIOWE' },
+  'map.partialHint': {
+    uk: 'Області, де тривога охоплює лише окремі райони',
+    en: 'Regions where the alert covers only some districts',
+    pl: 'Obwody, w których alarm obejmuje tylko część rejonów',
+  },
+  'map.regionPartial': {
+    uk: '{label} · районів: {count}',
+    en: '{label} · districts: {count}',
+    pl: '{label} · rejonów: {count}',
+  },
+  'map.focusHint': {
+    uk: 'Наблизити область (подвійний клік)',
+    en: 'Zoom to region (double-click)',
+    pl: 'Przybliż obwód (podwójne kliknięcie)',
+  },
 
   'filter.typeAria': {
     uk: 'Фільтр за типом загрози',
@@ -239,6 +270,7 @@ const messages = {
 
   'legend.aria': { uk: 'Умовні позначення', en: 'Legend', pl: 'Legenda' },
   'legend.nominal': { uk: 'Тривала позначка', en: 'Administrative marker', pl: 'Oznaczenie administracyjne' },
+  'legend.partial': { uk: 'Часткова (окремі райони)', en: 'Partial (some districts)', pl: 'Częściowy (część rejonów)' },
   'legend.clear': { uk: 'Не вказано джерелом', en: 'Not reported by source', pl: 'Nie wskazano w źródle' },
   'legend.loading': { uk: 'Завантаження', en: 'Loading', pl: 'Ładowanie' },
   'legend.noData': { uk: 'Немає даних', en: 'No data', pl: 'Brak danych' },
@@ -262,6 +294,19 @@ const messages = {
   'selected.addFav': { uk: 'Додати до обраного', en: 'Add to favorites', pl: 'Dodaj do ulubionych' },
   'selected.removeFav': { uk: 'Вилучити з обраного', en: 'Remove from favorites', pl: 'Usuń z ulubionych' },
   'selected.clear': { uk: 'Зняти вибір області', en: 'Clear region selection', pl: 'Wyczyść wybór obwodu' },
+  'selected.raions': {
+    uk: 'Тривога в районах ({districts})',
+    en: 'Districts under alert ({districts})',
+    pl: 'Rejony objęte alarmem ({districts})',
+  },
+  'selected.raionsHint': {
+    uk: 'Область пофарбована частково: тривога лише в цих районах',
+    en: 'The region is shaded partially: only these districts are under alert',
+    pl: 'Obwód jest częściowo zacieniowany: alarm tylko w tych rejonach',
+  },
+  'selected.zoom': { uk: 'Наблизити область', en: 'Zoom to region', pl: 'Przybliż obwód' },
+  'selected.copy': { uk: 'Копіювати зведення', en: 'Copy summary', pl: 'Kopiuj podsumowanie' },
+  'selected.copied': { uk: 'Скопійовано', en: 'Copied', pl: 'Skopiowano' },
 
   'panel.eyebrow': { uk: 'ПЕРЕЛІК', en: 'LIST', pl: 'LISTA' },
   'panel.title': { uk: 'Регіони', en: 'Regions', pl: 'Regiony' },
@@ -324,6 +369,11 @@ const messages = {
   'level.word': { uk: 'рівень', en: 'level', pl: 'poziom' },
 
   'status.active': { uk: 'Є тривога або загроза', en: 'Alert or threat active', pl: 'Alarm lub zagrożenie aktywne' },
+  'status.partial': {
+    uk: 'Часткова тривога (окремі райони)',
+    en: 'Partial alert (some districts)',
+    pl: 'Częściowy alarm (część rejonów)',
+  },
   'status.nominal': {
     uk: 'Тривала адміністративна позначка',
     en: 'Long-standing administrative marker',
@@ -358,6 +408,29 @@ const messages = {
   'csv.started': { uk: 'Початок за джерелом', en: 'Started (source)', pl: 'Początek (źródło)' },
   'csv.duration': { uk: 'Тривалість за джерелом', en: 'Duration (source)', pl: 'Czas trwania (źródło)' },
 
+  'theme.aria': { uk: 'Тема оформлення', en: 'Color theme', pl: 'Motyw kolorystyczny' },
+  'theme.toDark': { uk: 'Увімкнути темну тему', en: 'Switch to dark theme', pl: 'Włącz ciemny motyw' },
+  'theme.toLight': { uk: 'Увімкнути світлу тему', en: 'Switch to light theme', pl: 'Włącz jasny motyw' },
+
+  'toast.new': { uk: 'Нова тривога', en: 'New alert', pl: 'Nowy alarm' },
+  'toast.ended': { uk: 'Тривогу скасовано', en: 'Alert ended', pl: 'Alarm odwołany' },
+  'toast.dismiss': { uk: 'Закрити сповіщення', en: 'Dismiss notification', pl: 'Zamknij powiadomienie' },
+  'toast.andMore': { uk: 'і ще {count}', en: 'and {count} more', pl: 'i jeszcze {count}' },
+
+  'panel.copySummary': { uk: 'Копіювати зведення', en: 'Copy summary', pl: 'Kopiuj podsumowanie' },
+  'panel.copySummaryHint': {
+    uk: 'Скопіювати текстовий огляд активних тривог із посиланням на мапу',
+    en: 'Copy a text overview of active alerts with a link to the map',
+    pl: 'Kopiuj tekstowe podsumowanie aktywnych alarmów z linkiem do mapy',
+  },
+  'panel.searchHint': { uk: 'Пошук області (клавіша /)', en: 'Search regions ( / key)', pl: 'Szukaj obwodu (klawisz /)' },
+  'panel.clearSearch': { uk: 'Очистити пошук', en: 'Clear search', pl: 'Wyczyść wyszukiwanie' },
+  'panel.shortcuts': {
+    uk: '+ / − масштаб · 0 вся мапа · / пошук · Esc зняти вибір',
+    en: '+ / − zoom · 0 whole map · / search · Esc clear selection',
+    pl: '+ / − powiększenie · 0 cała mapa · / szukaj · Esc wyczyść wybór',
+  },
+
   'footer.disclaimer': {
     uk: 'Це інформаційна мапа, не офіційне сповіщення. У разі тривоги дотримуйтеся вказівок місцевої влади та прямуйте в укриття.',
     en: 'This is an informational map, not an official alert. During an alert, follow local authorities’ instructions and go to a shelter.',
@@ -388,25 +461,41 @@ const pluralRules: Record<Language, Intl.PluralRules> = {
   pl: new Intl.PluralRules('pl-PL'),
 }
 
-const regionWords: Record<Language, { nominative: [string, string, string]; locative: [string, string, string] }> = {
+const regionWords: Record<Language, { nominative: [string, string, string]; locative: [string, string, string]; genitive: [string, string, string] }> = {
   uk: {
     nominative: ['регіон', 'регіони', 'регіонів'],
     locative: ['регіоні', 'регіонах', 'регіонах'],
+    genitive: ['регіону', 'регіонів', 'регіонів'],
   },
   en: {
     nominative: ['region', 'regions', 'regions'],
     locative: ['region', 'regions', 'regions'],
+    genitive: ['region', 'regions', 'regions'],
   },
   pl: {
     nominative: ['region', 'regiony', 'regionów'],
     locative: ['regionie', 'regionach', 'regionach'],
+    genitive: ['regionu', 'regionów', 'regionów'],
   },
 }
 
-export function regionWord(lang: Language, count: number, form: 'nominative' | 'locative' = 'nominative') {
+const districtWords: Record<Language, [string, string, string]> = {
+  uk: ['район', 'райони', 'районів'],
+  en: ['district', 'districts', 'districts'],
+  pl: ['rejon', 'rejony', 'rejonów'],
+}
+
+function pluralIndex(lang: Language, count: number) {
   const category = pluralRules[lang].select(count)
-  const index = category === 'one' ? 0 : category === 'few' ? 1 : 2
-  return regionWords[lang][form][index]
+  return category === 'one' ? 0 : category === 'few' ? 1 : 2
+}
+
+export function regionWord(lang: Language, count: number, form: 'nominative' | 'locative' | 'genitive' = 'nominative') {
+  return regionWords[lang][form][pluralIndex(lang, count)]
+}
+
+export function districtWord(lang: Language, count: number) {
+  return districtWords[lang][pluralIndex(lang, count)]
 }
 
 const regionTitlesEn: Record<string, string> = {
