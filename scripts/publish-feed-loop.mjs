@@ -102,9 +102,10 @@ async function activeRunCount(token, repository) {
 }
 
 async function dispatchSuccessor(token, repository, ref) {
+  // У dispatch-запиті дозволено лише `ref` (і `inputs`): зайві ключі GitHub карає 422.
   const response = await api(`/repos/${repository}/actions/workflows/${workflowFile}/dispatches`, token, {
     method: 'POST',
-    body: JSON.stringify({ ref, reason: 'continue the alerts feed loop' }),
+    body: JSON.stringify({ ref }),
   })
   if (!response.ok) throw new Error(`dispatch returned HTTP ${response.status} ${redact(await response.text())}`)
 }
