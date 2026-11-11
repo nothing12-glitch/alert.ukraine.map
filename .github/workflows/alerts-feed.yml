@@ -34,7 +34,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git checkout --orphan feed
-          git rm --cached --quiet --recursive .
+          git rm --cached --quiet -r .
           cp .feed/alerts.json alerts.json
           git add alerts.json
           git \
