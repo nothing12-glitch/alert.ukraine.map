@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useI18n } from './i18n-context'
 import type { AlertState, ThreatLevel } from './map-types'
@@ -93,7 +93,12 @@ export default function UkraineMap({
   const applyViewport = useCallback((next: Viewport) => {
     viewportRef.current = next
     const svg = svgRef.current
-    if (svg) svg.setAttribute('viewBox', `${next.x} ${next.y} ${next.width} ${next.height}`)
+    if (svg) {
+      svg.setAttribute('viewBox', `${next.x} ${next.y} ${next.width} ${next.height}`)
+      // Обводки рахуються в одиницях viewBox, щоб не залежати від non-scaling-stroke:
+      // на ньому Chrome іноді домальовує контур лише частково.
+      svg.style.setProperty('--zoom-scale', String(next.width / base.width))
+    }
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round((base.width / next.width) * 100)}%`
   }, [base])
 
@@ -253,6 +258,7 @@ export default function UkraineMap({
       <svg
         ref={svgRef}
         className="ukraine-map"
+        style={{ '--zoom-scale': hatchScale } as CSSProperties}
         viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
         role="group"
         aria-label={t('map.aria')}

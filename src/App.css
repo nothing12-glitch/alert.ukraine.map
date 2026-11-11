@@ -477,9 +477,8 @@
 .region-shape {
   fill: var(--map-clear);
   stroke: #edf3ef;
-  stroke-width: 2.1px;
+  stroke-width: calc(2.1px * var(--zoom-scale, 1));
   stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition: fill 180ms ease, stroke 180ms ease;
 }
@@ -495,7 +494,7 @@
 .region-shape:focus-visible {
   fill: #91b6a4;
   stroke: #37594b;
-  stroke-width: 2.8px;
+  stroke-width: calc(2.8px * var(--zoom-scale, 1));
   outline: none;
 }
 
@@ -533,7 +532,7 @@
 .region-shape.state-partial:focus-visible {
   fill: url(#partial-hatch-red);
   stroke: #76281f;
-  stroke-width: 2.8px;
+  stroke-width: calc(2.8px * var(--zoom-scale, 1));
 }
 
 .region-shape.state-partial.level-yellow:hover,
@@ -568,7 +567,7 @@
 
 .region-shape.is-selected {
   stroke: #16231e;
-  stroke-width: 3.2px;
+  stroke-width: calc(3.2px * var(--zoom-scale, 1));
 }
 
 .region-outline-layer {
@@ -579,18 +578,16 @@
 .region-outline-line {
   fill: none;
   stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
 }
 
 .region-outline-halo {
   stroke: #ffffff;
-  stroke-width: 7px;
-  opacity: 0.92;
+  stroke-width: calc(7px * var(--zoom-scale, 1));
 }
 
 .region-outline-line {
   stroke: #101d18;
-  stroke-width: 2.6px;
+  stroke-width: calc(2.6px * var(--zoom-scale, 1));
 }
 
 .map-controls {
