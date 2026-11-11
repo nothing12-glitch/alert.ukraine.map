@@ -1,0 +1,45 @@
+name: Publish alerts feed
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alerts-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the feed snapshot
+        run: node scripts/publish-ukraine-alarm-feed.mjs
+        env:
+          UKRAINE_ALARM_TOKEN: ${{ secrets.UKRAINE_ALARM_TOKEN }}
+
+      - name: Publish the feed branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git checkout --orphan feed
+          git rm --cached --quiet --recursive .
+          cp .feed/alerts.json alerts.json
+          git add alerts.json
+          git \
+            -c user.name=github-actions[bot] \
+            -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit --quiet --allow-empty -m "Update alerts feed snapshot"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" feed
+          echo "Published alerts.json to the feed branch."

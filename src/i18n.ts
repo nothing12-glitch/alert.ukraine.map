@@ -36,7 +36,6 @@ const messages = {
   },
 
   'conn.official': { uk: 'ОФІЦІЙНИЙ PUSH', en: 'OFFICIAL PUSH', pl: 'OFICJALNY PUSH' },
-  'conn.needsBackend': { uk: 'BACKEND НЕ НАЛАШТОВАНИЙ', en: 'BACKEND NOT CONFIGURED', pl: 'BACKEND NIESKONFIGUROWANY' },
   'conn.polling': { uk: 'ДАНІ ОНОВЛЮЮТЬСЯ', en: 'DATA REFRESHING', pl: 'DANE ODŚWIEŻANE' },
   'conn.offline': { uk: 'НЕМАЄ ЗВ’ЯЗКУ', en: 'NO CONNECTION', pl: 'BRAK POŁĄCZENIA' },
   'conn.connecting': { uk: 'З’ЄДНАННЯ', en: 'CONNECTING', pl: 'ŁĄCZENIE' },
@@ -53,11 +52,6 @@ const messages = {
     uk: 'Офіційна карта працює в режимі наживо',
     en: 'The official map is running live',
     pl: 'Oficjalna mapa działa na żywo',
-  },
-  'headline.needsBackend': {
-    uk: 'Підключіть backend для даних нашої мапи',
-    en: 'Connect a backend to load our map data',
-    pl: 'Podłącz backend, aby wczytać dane naszej mapy',
   },
   'headline.syncing': {
     uk: 'Синхронізуємо поточний стан',
@@ -113,38 +107,27 @@ const messages = {
     pl: 'Oficjalna mapa z aktualizacjami push',
   },
   'mode.polling': {
-    uk: 'Автоматична перевірка раз на хвилину',
-    en: 'Automatic refresh every minute',
-    pl: 'Automatyczne odświeżanie co minutę',
+    uk: 'Оновлення через наш backend раз на хвилину',
+    en: 'Refreshing through our backend every minute',
+    pl: 'Odświeżanie przez nasz backend co minutę',
   },
-  'mode.needsBackend': {
-    uk: 'Для власної мапи потрібен backend',
-    en: 'Our map needs a backend',
-    pl: 'Nasza mapa wymaga backendu',
+  'mode.snapshot': {
+    uk: 'Оновлення зі знямка офіційного джерела',
+    en: 'Refreshing from the official source snapshot',
+    pl: 'Odświeżanie z migawki oficjalnego źródła',
   },
-  'mode.poll': { uk: 'Щохвилини', en: 'Every minute', pl: 'Co minutę' },
+  'mode.poll': { uk: 'Автооновлення', en: 'Auto-update', pl: 'Automatycznie' },
   'mode.live': { uk: 'Наживо', en: 'Live', pl: 'Na żywo' },
   'mode.pollingHint': {
-    uk: 'Оновлювати через backend раз на хвилину — стільки дозволяє ліміт джерела',
-    en: 'Refresh through the backend every minute — that is the source rate limit',
-    pl: 'Odświeżaj przez backend co minutę — takie jest ograniczenie źródła',
-  },
-  'mode.pollingUnavailableHint': {
-    uk: 'Показати нашу карту; оновлення запрацює після налаштування backend',
-    en: 'Show our map; updates will work after the backend is configured',
-    pl: 'Pokaż naszą mapę; aktualizacje zadziałają po skonfigurowaniu backendu',
+    uk: 'Перевіряти дані щохвилини: backend раз на хвилину, знімок джерела — раз на 5 хвилин',
+    en: 'Check the data every minute: the backend serves one-minute slices, the source snapshot five-minute ones',
+    pl: 'Sprawdzaj dane co minutę: backend daje dane co minutę, migawka źródła co 5 minut',
   },
   'mode.liveHint': {
     uk: 'Показати офіційну мапу з live-підпискою',
     en: 'Show the official map with a live subscription',
     pl: 'Pokaż oficjalną mapę z subskrypcją na żywo',
   },
-  'mode.backendNotice': {
-    uk: 'Цей режим оновлює дані через наш backend: розгорніть його на Render, додайте `UKRAINE_ALARM_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`. Без backend лишіться режиму «Наживо».',
-    en: 'This mode refreshes data through our backend: deploy it on Render, add `UKRAINE_ALARM_TOKEN` to Render Secrets and set the service URL in the GitHub variable `ALERTS_API_URL`. Without a backend, stay in the Live mode.',
-    pl: 'Ten tryb odświeża dane przez nasz backend: wdróż go na Render, dodaj `UKRAINE_ALARM_TOKEN` do Render Secrets i ustaw URL usługi w zmiennej GitHub `ALERTS_API_URL`. Bez backendu pozostań w trybie Na żywo.',
-  },
-
   'stale.withData': {
     uk: 'Показано останні отримані дані станом на {time}.',
     en: 'Showing the last received data as of {time}.',

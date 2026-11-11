@@ -377,8 +377,7 @@
   background: #eaf0ec;
 }
 
-.stale-notice,
-.backend-notice {
+.stale-notice {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -390,8 +389,7 @@
   font-size: 13px;
 }
 
-.stale-notice span,
-.backend-notice span {
+.stale-notice span {
   flex: 1;
 }
 
@@ -1517,7 +1515,6 @@
 }
 
 :root[data-theme='dark'] .stale-notice,
-:root[data-theme='dark'] .backend-notice,
 :root[data-theme='dark'] .notify-hint {
   border-color: #6b552b;
   color: #f0d49a;

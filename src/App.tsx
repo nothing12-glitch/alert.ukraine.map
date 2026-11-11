@@ -65,7 +65,16 @@ type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert
 type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
-const pollingAvailable = import.meta.env.DEV || Boolean(apiBaseUrl)
+// Без власного бекенду мапа читає знімок, який опублікує workflow у гілці feed.
+const staticFeedUrl = (import.meta.env.VITE_ALERTS_FEED_URL ?? '').trim() ||
+  'https://raw.githubusercontent.com/nothing12-glitch/alert.ukraine.map/feed/alerts.json'
+const useProxyFeed = import.meta.env.DEV || Boolean(apiBaseUrl)
+
+// Знімок у гілці feed публікують раз на 5 хвилин, тому міняємо лише відро кешу CDN.
+function feedRequestUrl() {
+  if (useProxyFeed) return `${apiBaseUrl}/api/alerts`
+  return `${staticFeedUrl}?bucket=${Math.floor(Date.now() / 300_000)}`
+}
 
 const regionMetadata: Record<string, { title: string; reportTitle: string }> = {
   cherkasy: { title: 'Черкаська область', reportTitle: 'Черкаська область' },
@@ -402,7 +411,7 @@ function App() {
     setIsRefreshing(true)
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/alerts`, {
+      const response = await fetch(feedRequestUrl(), {
         headers: { Accept: 'application/json' },
         cache: 'no-store',
         signal: AbortSignal.timeout(12000),
@@ -420,9 +429,10 @@ function App() {
     }
   }, [applyFeed])
 
-  // Джерело віддає один запит на хвилину на ключ, тому частіше питати немає сенсу.
+  // Через знімок дані змінюються раз на 5 хвилин, а через бекенд — раз на хвилину;
+  // хвилинний інтервал підходить обом шляхам і не впирається в ліміт джерела.
   useEffect(() => {
-    if (updateMode !== 'poll' || !pollingAvailable) return
+    if (updateMode !== 'poll') return
 
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
     const intervalId = window.setInterval(() => void refresh(), 60_000)
@@ -556,27 +566,24 @@ function App() {
     })
 
   const usingOfficialLive = updateMode === 'live'
-  const needsBackend = !pollingAvailable
-  const feedReady = !needsBackend && connection === 'live'
+  const feedReady = connection === 'live'
 
   const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
   const wholeRedCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'red').length
   const wholeYellowCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'yellow').length
   const headline = usingOfficialLive
     ? t('headline.official')
-    : needsBackend
-      ? t('headline.needsBackend')
-      : connection === 'loading'
-        ? t('headline.syncing')
-        : connection === 'error'
-          ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
-          : activeCount > 0
-            ? wholeRedCount
-              ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
-              : wholeYellowCount
-                ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
-                : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
-            : t('headline.none')
+    : connection === 'loading'
+      ? t('headline.syncing')
+      : connection === 'error'
+        ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
+        : activeCount > 0
+          ? wholeRedCount
+            ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
+            : wholeYellowCount
+              ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
+              : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
+          : t('headline.none')
 
   const toggleFavorite = (regionId: string) => {
     setFavorites((current) => current.includes(regionId)
@@ -714,8 +721,8 @@ function App() {
           </button>
         </div>
         <div className="topbar-status" aria-live="polite">
-          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : needsBackend ? 'error' : connection}`} />
-          <span>{usingOfficialLive ? t('conn.official') : needsBackend ? t('conn.needsBackend') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
+          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : connection}`} />
+          <span>{usingOfficialLive ? t('conn.official') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 
@@ -756,7 +763,7 @@ function App() {
             </div>
           )}
           <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? t('banner.stream') : updatedAt ? t('banner.received', { time: formatClock(lang, updatedAt.toISOString()) }) : t('banner.waiting')}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingOfficialLive || !pollingAvailable} hidden={usingOfficialLive || !pollingAvailable} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingOfficialLive} hidden={usingOfficialLive} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -765,10 +772,10 @@ function App() {
       <div className="update-mode-bar">
         <div className="update-mode-copy">
           <span className="eyebrow">{t('mode.eyebrow')}</span>
-          <strong>{usingOfficialLive ? t('mode.official') : pollingAvailable ? t('mode.polling') : t('mode.needsBackend')}</strong>
+          <strong>{usingOfficialLive ? t('mode.official') : useProxyFeed ? t('mode.polling') : t('mode.snapshot')}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label={t('mode.aria')}>
-          <button type="button" className={updateMode === 'poll' ? 'filter-active' : ''} aria-pressed={updateMode === 'poll'} onClick={() => setUpdateMode('poll')} title={pollingAvailable ? t('mode.pollingHint') : t('mode.pollingUnavailableHint')}>
+          <button type="button" className={updateMode === 'poll' ? 'filter-active' : ''} aria-pressed={updateMode === 'poll'} onClick={() => setUpdateMode('poll')} title={t('mode.pollingHint')}>
             <RefreshCw size={14} /> {t('mode.poll')}
           </button>
           <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title={t('mode.liveHint')}>
@@ -777,14 +784,7 @@ function App() {
         </div>
       </div>
 
-      {needsBackend && (
-        <div className="backend-notice" role="status">
-          <WifiOff size={16} />
-          <span>{t('mode.backendNotice')}</span>
-        </div>
-      )}
-
-      {!usingOfficialLive && !needsBackend && connection === 'error' && (
+      {!usingOfficialLive && connection === 'error' && (
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
           <span>{updatedAt

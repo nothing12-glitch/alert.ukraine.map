@@ -7,6 +7,7 @@
     "dev": "vite",
     "start:server": "node server/index.mjs",
     "sync:alarm-regions": "node --env-file-if-exists=.env scripts/sync-ukraine-alarm-regions.mjs",
+    "publish:feed": "node --env-file-if-exists=.env scripts/publish-ukraine-alarm-feed.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

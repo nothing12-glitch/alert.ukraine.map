@@ -12,17 +12,23 @@ npm.cmd run dev
 
 Відкрийте адресу, яку покаже Vite (типово `http://localhost:5173`). Без ключа локальний proxy віддає помилку, бо джерело не працює без автентифікації. Для production-перевірки виконайте `npm.cmd run build`.
 
+## Як це працює
+
+Дані проходять один шлях: офіційний UkraineAlarm API → нормалізатор `shared/ukraine-alarm-alerts.mjs` → стрічка стану, карта областей, перелік регіонів, сповіщення й CSV. Мапа може живитися двома способами — через локальний proxy (команда вище), через власний backend (`npm.cmd run start:server` або Render) або через статичний знімок, який публікує GitHub Actions (секція про GitHub Pages). Спосіб обирається сам: є `VITE_ALERTS_API_URL` — опитуємо backend, немає — читаємо знімок.
+
 ## Дані
 
-Джерелом є офіційний [UkraineAlarm API v3](https://api.ukrainealarm.com/) — `GET /api/v3/alerts` із заголовком `authorization: <ключ>` (без `Bearer`). Backend тримає ключ у себе: він викликає API, розв'язує `regionId` на область за статичним довідником `shared/ukraine-alarm-regions.mjs` і віддає браузеру лише нормалізовані поля — `location`, `region`, `scope`, `type`, `startedAt`, `duration`, `alertLevel`. Типи `AIR`, `ARTILLERY` та `URBAN_FIGHTS` перетворюються на «Повітряна тривога», «Загроза артобстрілу» й «Вуличні бої», рівні — на `red` або `yellow`. Тривога області фарбує область цілком, тривога району чи громади лише позначає її частково.
+Джерелом є офіційний [UkraineAlarm API v3](https://api.ukrainealarm.com/) — `GET /api/v3/alerts` із заголовком `authorization: <ключ>` (без `Bearer`). Ключ тримає серверна сторона (backend або Actions workflow): вона викликає API, розв'язує `regionId` на область за статичним довідником `shared/ukraine-alarm-regions.mjs` і віддає браузеру лише нормалізовані поля — `location`, `region`, `scope`, `type`, `startedAt`, `duration`, `alertLevel`. Типи `AIR`, `ARTILLERY` та `URBAN_FIGHTS` перетворюються на «Повітряна тривога», «Загроза артобстрілу» й «Вуличні бої», рівні — на `red` або `yellow`. Тривога області фарбує область цілком, тривога району чи громади лише позначає її частково.
 
 Джерело віддає один запит на хвилину на ключ, тому backend кешує відповідь на 60 секунд, а до 10 хвилин після помилки чи 429 віддає останній успішний стан. Кеш також захищає ліміт, коли відкрито кілька вкладок.
 
-Режими оновлення два. `Щохвилини` (типовий) питає наш backend раз на 60 секунд. `Наживо` вбудовує офіційну карту `map.ukrainealarm.com` із власною push-підпискою; персональний токен наш frontend не читає і не передає.
+Без бекенду мапа читає статичний знімок `alerts.json`, який workflow `.github/workflows/alerts-feed.yml` викладає кожні 5 хвилин в окрему гілку `feed`. Знімок містить лише нормалізовані публічні поля, токена в ньому немає; читається він прямо з `raw.githubusercontent.com`. Той самий зріз можна створити вручну: `npm.cmd run publish:feed` пише `.feed/alerts.json`. URL знімка змінюється `VITE_ALERTS_FEED_URL` (порожнє значення не вимикає його — використовується публічний знімок цього репозиторію).
+
+Режими оновлення два. `Автооновлення` (типовий) опитує раз на хвилину: локальний proxy або Render backend, якщо він заданий, інакше — статичний знімок. `Наживо` вбудовує офіційну карту `map.ukrainealarm.com` із власною push-підпискою; персональний токен наш frontend не читає і не передає.
 
 Червоний і жовтий рівні видно на мапі областей, у легенді, переліку регіонів, картці вибраної області, у стрічці стану, журналі змін, CSV-експорті та сповіщеннях. Якщо джерело не передало розпізнаний рівень, регіон показується червоним: недооцінка небезпеки гірша за переоцінку.
 
-Ключ запитується через форму на [api.ukrainealarm.com](https://api.ukrainealarm.com/) і прив'язаний до акаунта. Тримайте його в локальному `.env` (файл уже в `.gitignore`) та в Render Secrets — у репозиторій він потрапити не повинен.
+Ключ запитується через форму на [api.ukrainealarm.com](https://api.ukrainealarm.com/) і прив'язаний до акаунта. Тримайте його в локальному `.env` (файл уже в `.gitignore`) та в Actions secret `UKRAINE_ALARM_TOKEN`; якщо розгортаєте backend — ще й у Render Secrets. У код репозиторію й у збірку frontend ключ не потрапляє.
 
 Довідник `shared/ukraine-alarm-regions.mjs` — автозгенерований файл з `npm.cmd run sync:alarm-regions`. Він потрібен, бо `/alerts` називає район чи громаду, але не область, до якої вони належать; окремий запит до `/regions` щохвилини з'їв би весь ліміт. Запускайте синхронізацію, якщо джерело повідомляє про невідомі `regionId`.
 
@@ -38,12 +44,14 @@ npm.cmd run dev
 
 1. Створи GitHub repository і push гілку `main`.
 2. У GitHub Settings → Pages вибери GitHub Actions як deployment source.
-3. У Render створи Blueprint із цього репозиторію за `render.yaml`; задай `ALLOWED_ORIGIN` як `https://<username>.github.io` і `UKRAINE_ALARM_TOKEN` як секретне значення зі свого ключа UkraineAlarm.
-4. Скопіюй URL Render service у GitHub repository variable `ALERTS_API_URL` і перезапусти Pages workflow — без нього мапа не має даних.
+3. У Settings → Secrets and variables → Actions додай repository secret `UKRAINE_ALARM_TOKEN` зі свого ключа UkraineAlarm.
+4. Запусти workflow «Publish alerts feed» вручну — він створить гілку `feed` зі знімком `alerts.json`, і далі оновлюватиме її кожні 5 хвилин.
 
-Workflow `.github/workflows/pages.yml` публікує frontend після push у `main`. Обидва режими потребують backend: `Щохвилини` опитує Render service, а `Наживо` вбудовує офіційну мапу та не потребує передачі твого токена нашому frontend.
+Після цього `.github/workflows/pages.yml` публікує мапу з даними після кожного push у `main`, без жодного зовнішнього хостингу. Зріз знімка може відставати приблизно на 5–10 хвилин, і час останнього оновлення видно у стрічці стану.
 
-GitHub Pages не запускає Vite middleware і не може напряму читати наші API-відповіді без `ALERTS_API_URL`: без цієї змінної мапа показує підказку налаштувати backend. Ключ ніколи не вкладається у збірку frontend — `VITE_`-змінних для нього не існує.
+Хочеш свіжіші дані раз на хвилину — розгорни backend: створи у Render Blueprint із цього репозиторію за `render.yaml`, задай `ALLOWED_ORIGIN` як `https://<username>.github.io` і `UKRAINE_ALARM_TOKEN` як Render secret, а URL сервісу скопіюй у GitHub repository variable `ALERTS_API_URL` та перезапусти Pages workflow.
+
+Ключ ніколи не вкладається у збірку frontend — `VITE_`-змінних для нього не існує, а публічний `alerts.json` містить лише нормалізовані дані тривог.
 
 ## Атрибуція карти
 
