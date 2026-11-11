@@ -11,5 +11,5 @@ services:
         value: 22
       - key: ALLOWED_ORIGIN
         sync: false
-      - key: ALERTS_IN_UA_TOKEN
+      - key: UKRAINE_ALARM_TOKEN
         sync: false

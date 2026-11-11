@@ -6,7 +6,6 @@ import type { AlertState, ThreatLevel } from './map-types'
 
 type MapRegion = { id: string; title: string; path: string }
 type Viewport = { x: number; y: number; width: number; height: number }
-type BadgePoint = { x: number; y: number }
 type Props = {
   regions: MapRegion[]
   statuses: Record<string, AlertState>
@@ -61,35 +60,6 @@ function toSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   return matrix ? point.matrixTransform(matrix.inverse()) : { x: 0, y: 0 }
 }
 
-// Центр прямокутника може лежати поза контуром (у вигнутій області), тож шукаємо
-// найближчу до центру точку, яка справді всередині заливки.
-function findBadgePoint(node: SVGPathElement, svg: SVGSVGElement): BadgePoint {
-  const box = node.getBBox()
-  const centerX = box.x + box.width / 2
-  const centerY = box.y + box.height / 2
-  const probe = svg.createSVGPoint()
-  const inside = (x: number, y: number) => {
-    probe.x = x
-    probe.y = y
-    return typeof node.isPointInFill === 'function' ? node.isPointInFill(probe) : true
-  }
-
-  if (inside(centerX, centerY)) return { x: centerX, y: centerY }
-
-  let best: { x: number; y: number; distance: number } | null = null
-  for (let column = 1; column < 8; column += 1) {
-    for (let row = 1; row < 8; row += 1) {
-      const x = box.x + (box.width * column) / 8
-      const y = box.y + (box.height * row) / 8
-      if (!inside(x, y)) continue
-      const distance = Math.hypot(x - centerX, y - centerY)
-      if (!best || distance < best.distance) best = { x, y, distance }
-    }
-  }
-
-  return best ? { x: best.x, y: best.y } : { x: centerX, y: centerY }
-}
-
 export default function UkraineMap({
   regions,
   statuses,
@@ -107,22 +77,19 @@ export default function UkraineMap({
   const [viewport, setViewport] = useState<Viewport>(base)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [isPanning, setIsPanning] = useState(false)
-  const [badgePoints, setBadgePoints] = useState<Record<string, BadgePoint>>({})
   const stageRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const zoomLabelRef = useRef<HTMLSpanElement>(null)
   const viewportRef = useRef<Viewport>(base)
   const frameRef = useRef(0)
   const pathRefs = useRef<Record<string, SVGPathElement | null>>({})
-  const badgeRefs = useRef<Record<string, SVGGElement | null>>({})
-  const badgeScaleWidthRef = useRef(base.width)
   const drag = useRef<{ pointerId: number; startX: number; startY: number; viewport: Viewport; scale: number; moved: boolean } | null>(null)
   const suppressClick = useRef(false)
 
   const isFullyZoomedOut = viewport.width >= base.width - 0.01
   const zoomPercent = Math.round((base.width / viewport.width) * 100)
-  const badgeScale = viewport.width / base.width
-  const hatchTile = 12 * badgeScale
+  const hatchScale = viewport.width / base.width
+  const hatchTile = 12 * hatchScale
   const hoveredRegion = hoveredId ? regions.find((region) => region.id === hoveredId) : undefined
 
   const applyViewport = useCallback((next: Viewport) => {
@@ -130,14 +97,7 @@ export default function UkraineMap({
     const svg = svgRef.current
     if (svg) svg.setAttribute('viewBox', `${next.x} ${next.y} ${next.width} ${next.height}`)
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round((base.width / next.width) * 100)}%`
-    if (next.width === badgeScaleWidthRef.current) return
-    badgeScaleWidthRef.current = next.width
-    const scale = next.width / base.width
-    for (const [id, node] of Object.entries(badgeRefs.current)) {
-      const point = badgePoints[id]
-      if (node && point) node.setAttribute('transform', `translate(${point.x} ${point.y}) scale(${scale})`)
-    }
-  }, [base, badgePoints])
+  }, [base])
 
   // React-стан оновлюється лише коли жест завершився: під час анімації патерн-штри-
   // хування не перераховується, інакше кожен кадр примусово перефарбовує всю карту.
@@ -205,16 +165,6 @@ export default function UkraineMap({
   const resetView = useCallback(() => {
     animateTo(base, RESET_DURATION)
   }, [animateTo, base])
-
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const points: Record<string, BadgePoint> = {}
-    for (const [id, node] of Object.entries(pathRefs.current)) {
-      if (node) points[id] = findBadgePoint(node, svg)
-    }
-    setBadgePoints(points)
-  }, [regions])
 
   useEffect(() => {
     if (!focusRequest) return
@@ -312,11 +262,11 @@ export default function UkraineMap({
         <defs>
           <pattern id="partial-hatch-red" width={hatchTile} height={hatchTile} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width={hatchTile} height={hatchTile} className="hatch-bg hatch-red" />
-            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * badgeScale} className="hatch-line hatch-red" />
+            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * hatchScale} className="hatch-line hatch-red" />
           </pattern>
           <pattern id="partial-hatch-yellow" width={hatchTile} height={hatchTile} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width={hatchTile} height={hatchTile} className="hatch-bg hatch-yellow" />
-            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * badgeScale} className="hatch-line hatch-yellow" />
+            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * hatchScale} className="hatch-line hatch-yellow" />
           </pattern>
         </defs>
 
@@ -359,28 +309,6 @@ export default function UkraineMap({
             </path>
           )
         })}
-
-        <g className="region-badges" aria-hidden="true">
-          {regions.map((region) => {
-            if (statuses[region.id] !== 'partial') return null
-            const count = partialCounts[region.id]
-            const point = badgePoints[region.id]
-            if (!count || !point) return null
-            return (
-              <g
-                key={region.id}
-                ref={(node) => {
-                  badgeRefs.current[region.id] = node
-                }}
-                className={`region-badge level-${levels[region.id] ?? 'red'}`}
-                transform={`translate(${point.x} ${point.y}) scale(${badgeScale})`}
-              >
-                <circle r="17" />
-                <text dy="0.34em">{count}</text>
-              </g>
-            )
-          })}
-        </g>
 
         {hoveredRegion && (
           <g className="region-outline-layer" aria-hidden="true">

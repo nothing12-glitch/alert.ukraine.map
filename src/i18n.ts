@@ -38,8 +38,6 @@ const messages = {
   'conn.official': { uk: 'ОФІЦІЙНИЙ PUSH', en: 'OFFICIAL PUSH', pl: 'OFICJALNY PUSH' },
   'conn.needsBackend': { uk: 'BACKEND НЕ НАЛАШТОВАНИЙ', en: 'BACKEND NOT CONFIGURED', pl: 'BACKEND NIESKONFIGUROWANY' },
   'conn.polling': { uk: 'ДАНІ ОНОВЛЮЮТЬСЯ', en: 'DATA REFRESHING', pl: 'DANE ODŚWIEŻANE' },
-  'conn.stream': { uk: 'ПОТІК NEPTUN', en: 'NEPTUN STREAM', pl: 'STRUMIEŃ NEPTUN' },
-  'conn.reconnecting': { uk: 'ПЕРЕПІДКЛЮЧЕННЯ', en: 'RECONNECTING', pl: 'PONOWNE ŁĄCZENIE' },
   'conn.offline': { uk: 'НЕМАЄ ЗВ’ЯЗКУ', en: 'NO CONNECTION', pl: 'BRAK POŁĄCZENIA' },
   'conn.connecting': { uk: 'З’ЄДНАННЯ', en: 'CONNECTING', pl: 'ŁĄCZENIE' },
 
@@ -61,25 +59,10 @@ const messages = {
     en: 'Connect a backend to load our map data',
     pl: 'Podłącz backend, aby wczytać dane naszej mapy',
   },
-  'headline.connectingStream': {
-    uk: 'Підключаємось до потоку NEPTUN',
-    en: 'Connecting to the NEPTUN stream',
-    pl: 'Łączenie ze strumieniem NEPTUN',
-  },
   'headline.syncing': {
     uk: 'Синхронізуємо поточний стан',
     en: 'Syncing the current status',
     pl: 'Synchronizacja bieżącego stanu',
-  },
-  'headline.streamInterrupted': {
-    uk: 'Потік розірвано, триває перепідключення',
-    en: 'Stream interrupted, reconnecting',
-    pl: 'Strumień przerwany, ponowne łączenie',
-  },
-  'headline.streamFailed': {
-    uk: 'Не вдалося підключитися до потоку NEPTUN',
-    en: 'Could not connect to the NEPTUN stream',
-    pl: 'Nie udało się połączyć ze strumieniem NEPTUN',
   },
   'headline.noConnection': {
     uk: 'Немає зв’язку з джерелом',
@@ -129,33 +112,22 @@ const messages = {
     en: 'Official map with push updates',
     pl: 'Oficjalna mapa z aktualizacjami push',
   },
-  'mode.stream': {
-    uk: 'Миттєва підписка на потік NEPTUN без нашого backend',
-    en: 'Instant NEPTUN stream subscription without our backend',
-    pl: 'Natychmiastowa subskrypcja strumienia NEPTUN bez naszego backendu',
-  },
   'mode.polling': {
-    uk: 'Автоматична перевірка кожні 20 секунд',
-    en: 'Automatic refresh every 20 seconds',
-    pl: 'Automatyczne odświeżanie co 20 sekund',
+    uk: 'Автоматична перевірка раз на хвилину',
+    en: 'Automatic refresh every minute',
+    pl: 'Automatyczne odświeżanie co minutę',
   },
   'mode.needsBackend': {
     uk: 'Для власної мапи потрібен backend',
     en: 'Our map needs a backend',
     pl: 'Nasza mapa wymaga backendu',
   },
-  'mode.instant': { uk: 'Миттєво', en: 'Instant', pl: 'Natychmiast' },
-  'mode.20s': { uk: '20 сек', en: '20 sec', pl: '20 s' },
+  'mode.poll': { uk: 'Щохвилини', en: 'Every minute', pl: 'Co minutę' },
   'mode.live': { uk: 'Наживо', en: 'Live', pl: 'Na żywo' },
-  'mode.instantHint': {
-    uk: 'Слухати потік NEPTUN: рівні тривог з’являються за кілька секунд',
-    en: 'Listen to the NEPTUN stream: alert levels arrive within seconds',
-    pl: 'Słuchaj strumienia NEPTUN: poziomy alarmów pojawiają się w ciągu kilku sekund',
-  },
   'mode.pollingHint': {
-    uk: 'Оновлювати через backend кожні 20 секунд',
-    en: 'Refresh through the backend every 20 seconds',
-    pl: 'Odświeżaj przez backend co 20 sekund',
+    uk: 'Оновлювати через backend раз на хвилину — стільки дозволяє ліміт джерела',
+    en: 'Refresh through the backend every minute — that is the source rate limit',
+    pl: 'Odświeżaj przez backend co minutę — takie jest ograniczenie źródła',
   },
   'mode.pollingUnavailableHint': {
     uk: 'Показати нашу карту; оновлення запрацює після налаштування backend',
@@ -168,20 +140,15 @@ const messages = {
     pl: 'Pokaż oficjalną mapę z subskrypcją na żywo',
   },
   'mode.backendNotice': {
-    uk: 'Цей режим оновлює дані через наш backend: розгорніть його на Render, додайте `ALERTS_IN_UA_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`. Без backend лишіться режиму «Миттєво».',
-    en: 'This mode refreshes data through our backend: deploy it on Render, add `ALERTS_IN_UA_TOKEN` to Render Secrets and set the service URL in the GitHub variable `ALERTS_API_URL`. Without a backend, stay in Instant mode.',
-    pl: 'Ten tryb odświeża dane przez nasz backend: wdróż go na Render, dodaj `ALERTS_IN_UA_TOKEN` do Render Secrets i ustaw URL usługi w zmiennej GitHub `ALERTS_API_URL`. Bez backendu pozostań w trybie Natychmiast.',
+    uk: 'Цей режим оновлює дані через наш backend: розгорніть його на Render, додайте `UKRAINE_ALARM_TOKEN` у Render Secrets і вкажіть URL сервісу в GitHub variable `ALERTS_API_URL`. Без backend лишіться режиму «Наживо».',
+    en: 'This mode refreshes data through our backend: deploy it on Render, add `UKRAINE_ALARM_TOKEN` to Render Secrets and set the service URL in the GitHub variable `ALERTS_API_URL`. Without a backend, stay in the Live mode.',
+    pl: 'Ten tryb odświeża dane przez nasz backend: wdróż go na Render, dodaj `UKRAINE_ALARM_TOKEN` do Render Secrets i ustaw URL usługi w zmiennej GitHub `ALERTS_API_URL`. Bez backendu pozostań w trybie Na żywo.',
   },
 
   'stale.withData': {
     uk: 'Показано останні отримані дані станом на {time}.',
     en: 'Showing the last received data as of {time}.',
     pl: 'Pokazano ostatnie otrzymane dane na {time}.',
-  },
-  'stale.stream': {
-    uk: 'Потік NEPTUN недоступний: спробуйте режим «20 сек» або перевірте пізніше.',
-    en: 'The NEPTUN stream is unavailable: try 20 sec mode or check again later.',
-    pl: 'Strumień NEPTUN jest niedostępny: spróbuj trybu 20 s lub sprawdź później.',
   },
   'stale.polling': {
     uk: 'Перевірте з’єднання та спробуйте оновити дані.',
@@ -380,6 +347,11 @@ const messages = {
     pl: 'Długotrwałe oznaczenie administracyjne',
   },
   'status.clear': { uk: 'У джерелі не зазначено', en: 'Not reported by source', pl: 'Nie wskazano w źródle' },
+  'status.cleared': {
+    uk: 'Відбій повітряної тривоги',
+    en: 'Air raid alert all clear',
+    pl: 'Odwołanie alarmu powietrznego',
+  },
   'status.unknown': { uk: 'Немає даних', en: 'No data', pl: 'Brak danych' },
 
   'alertType.air': { uk: 'Повітряна тривога', en: 'Air alert', pl: 'Alarm powietrzny' },
@@ -413,7 +385,7 @@ const messages = {
   'theme.toLight': { uk: 'Увімкнути світлу тему', en: 'Switch to light theme', pl: 'Włącz jasny motyw' },
 
   'toast.new': { uk: 'Нова тривога', en: 'New alert', pl: 'Nowy alarm' },
-  'toast.ended': { uk: 'Тривогу скасовано', en: 'Alert ended', pl: 'Alarm odwołany' },
+  'toast.ended': { uk: 'Відбій тривоги', en: 'Alert ended', pl: 'Alarm odwołany' },
   'toast.dismiss': { uk: 'Закрити сповіщення', en: 'Dismiss notification', pl: 'Zamknij powiadomienie' },
   'toast.andMore': { uk: 'і ще {count}', en: 'and {count} more', pl: 'i jeszcze {count}' },
 
@@ -438,10 +410,10 @@ const messages = {
   },
   'footer.borders': { uk: 'Межі:', en: 'Borders:', pl: 'Granice:' },
   'footer.data': { uk: 'Дані:', en: 'Data:', pl: 'Dane:' },
-  'footer.neptunSource': {
-    uk: 'Карта повітряних тривог — NEPTUN',
-    en: 'Air alert map — NEPTUN',
-    pl: 'Mapa alarmów powietrznych — NEPTUN',
+  'footer.alarmSource': {
+    uk: 'Дані тривог — UkraineAlarm',
+    en: 'Alert data — UkraineAlarm',
+    pl: 'Dane alarmów — UkraineAlarm',
   },
 } as const satisfies Record<string, Record<Language, string>>
 

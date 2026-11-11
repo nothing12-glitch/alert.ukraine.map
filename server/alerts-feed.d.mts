@@ -15,4 +15,7 @@ export interface AlertFeed {
   alerts: OfficialAlert[]
 }
 
+export const feedCacheMs: number
+
 export function fetchAlertsFeed(token?: string): Promise<AlertFeed>
+export function getAlertsFeed(token?: string): Promise<AlertFeed>

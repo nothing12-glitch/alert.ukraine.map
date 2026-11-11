@@ -24,11 +24,6 @@ import {
   Zap,
 } from 'lucide-react'
 import ukraineMap from '@svg-maps/ukraine'
-import {
-  neptunStreamUrl,
-  normalizeNeptunFeed,
-  type NeptunAlertPayload,
-} from '../shared/neptun-alerts.mjs'
 import UkraineMap from './UkraineMap'
 import {
   alertTypeLabel,
@@ -64,7 +59,7 @@ type OfficialAlert = {
 type AlertFeed = { source: string; fetchedAt: string; alerts: OfficialAlert[] }
 type TypeFilter = 'all' | 'air' | 'other'
 type RegionFilter = 'all' | 'active' | 'favorite'
-type UpdateMode = 'ws' | '20s' | 'live'
+type UpdateMode = 'poll' | 'live'
 type Theme = 'light' | 'dark'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
@@ -127,6 +122,8 @@ const statusOrder: Record<AlertState, number> = {
   unknown: 4,
 }
 
+const CLEARED_NOTICE_MS = 5 * 60_000
+
 function normalizeLocation(value: string) {
   return value.trim().toLocaleLowerCase('uk').replaceAll('’', "'").replace(/\s+/g, ' ')
 }
@@ -184,8 +181,9 @@ function isStandingOccupiedAlert(alert: OfficialAlert) {
   const isOccupiedArea = location === normalizeLocation('Луганська область')
     || location === normalizeLocation('Автономна Республіка Крим')
   const startedAt = new Date(alert.startedAtIso).getTime()
-  const durationDays = Number.isFinite(startedAt) ? (Date.now() - startedAt) / 86_400_000 : 0
-  return isOccupiedArea && durationDays >= 14
+  const durationHours = Number.isFinite(startedAt) ? (Date.now() - startedAt) / 3_600_000 : 0
+  // Жива тривога рідко тримається довше кількох годин; уся довшана позначка — це статус окупації.
+  return isOccupiedArea && durationHours >= 6
 }
 
 function isAirAlert(alert: OfficialAlert) {
@@ -305,16 +303,16 @@ function App() {
   const [focusRequest, setFocusRequest] = useState<{ regionId: string; token: number } | null>(null)
   const [theme, setTheme] = useState<Theme>(readInitialTheme)
   const [toast, setToast] = useState<{ id: string; events: ToastEvent[] } | null>(null)
+  const [clearedAt, setClearedAt] = useState<Record<string, number>>({})
   const [copied, setCopied] = useState(false)
-  const [, setTick] = useState(0)
+  const [tickAt, setTickAt] = useState(() => Date.now())
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all')
-  const [updateMode, setUpdateMode] = useState<UpdateMode>(() => {
-    const storedMode = readStored<UpdateMode>('alert-map-update-mode-v2', 'ws')
-    return storedMode === '20s' || storedMode === 'live' ? storedMode : 'ws'
-  })
+  const [updateMode, setUpdateMode] = useState<UpdateMode>(() => (
+    readStored<UpdateMode>('alert-map-update-mode-v2', 'poll') === 'live' ? 'live' : 'poll'
+  ))
   const [favorites, setFavorites] = useState<string[]>(() => readStored('alert-map-favorites', []))
   const [activityHistory, setActivityHistory] = useState<ActivityEvent[]>(() => readStored('alert-map-history', []))
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -323,6 +321,7 @@ function App() {
   const [notifyFavoritesOnly, setNotifyFavoritesOnly] = useState(() => readStored('alert-map-notify-favorites-only', false))
   const [notifySound, setNotifySound] = useState(() => readStored('alert-map-notify-sound', true))
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
+  const previousStatuses = useRef<Record<string, AlertState> | null>(null)
   const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang })
 
   useEffect(() => {
@@ -355,7 +354,7 @@ function App() {
 
   // Тривалість тривог показуємо від часу джерела, тож перемальовуємо її періодично.
   useEffect(() => {
-    const timer = window.setInterval(() => setTick((current) => current + 1), 30_000)
+    const timer = window.setInterval(() => setTickAt(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -421,75 +420,17 @@ function App() {
     }
   }, [applyFeed])
 
+  // Джерело віддає один запит на хвилину на ключ, тому частіше питати немає сенсу.
   useEffect(() => {
-    if (updateMode !== '20s' || !pollingAvailable) return
+    if (updateMode !== 'poll' || !pollingAvailable) return
 
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
-    const intervalId = window.setInterval(() => void refresh(), 20_000)
+    const intervalId = window.setInterval(() => void refresh(), 60_000)
     return () => {
       window.clearTimeout(initialRefresh)
       window.clearInterval(intervalId)
     }
   }, [refresh, updateMode])
-
-  useEffect(() => {
-    if (updateMode !== 'ws') return
-
-    let disposed = false
-    let socket: WebSocket | null = null
-    let retryTimer = 0
-    let attempt = 0
-    let lastFrameAt = 0
-
-    const connect = () => {
-      if (disposed) return
-      setConnection('loading')
-
-      const current = new WebSocket(neptunStreamUrl)
-      socket = current
-
-      current.addEventListener('open', () => {
-        attempt = 0
-        lastFrameAt = Date.now()
-      })
-
-      current.addEventListener('message', (event) => {
-        lastFrameAt = Date.now()
-        try {
-          const frame = JSON.parse(String(event.data)) as { type?: string; data?: NeptunAlertPayload }
-          if (frame.type === 'alerts') applyFeed(normalizeNeptunFeed(frame.data ?? {}))
-        } catch {
-          // Кадри потоку не проходять разом із даними інших треків — просто чекаємо наступного.
-        }
-      })
-
-      current.addEventListener('error', () => current.close())
-
-      current.addEventListener('close', () => {
-        if (disposed) return
-        socket = null
-        setConnection('error')
-        attempt += 1
-        retryTimer = window.setTimeout(connect, Math.min(30_000, 2 ** Math.min(attempt, 5) * 1_000))
-      })
-    }
-
-    connect()
-    // NEPTUN шле heartbeat; якщо довго немає жодного кадру, з'єднання зависло — розриваємо його заради reconnect.
-    const stallTimer = window.setInterval(() => {
-      if (lastFrameAt && Date.now() - lastFrameAt > 60_000) {
-        lastFrameAt = 0
-        socket?.close()
-      }
-    }, 10_000)
-
-    return () => {
-      disposed = true
-      window.clearTimeout(retryTimer)
-      window.clearInterval(stallTimer)
-      socket?.close()
-    }
-  }, [applyFeed, updateMode])
 
   useEffect(() => writeStored('alert-map-favorites', favorites), [favorites])
   useEffect(() => writeStored('alert-map-history', activityHistory), [activityHistory])
@@ -534,6 +475,31 @@ function App() {
       return count ? [[region.id, count]] : []
     }),
   ) as Record<string, number>
+  // «Відбій» тримаємо деякий час після зняття тривоги: так видно, що область щойно
+  // відійшла, а не просто не має даних.
+  useEffect(() => {
+    const previous = previousStatuses.current
+    previousStatuses.current = statuses
+    if (!previous) return
+    const ended = regions.filter((region) =>
+      (previous[region.id] === 'active' || previous[region.id] === 'partial') && statuses[region.id] === 'clear')
+    const realerted = regions.filter((region) => previous[region.id] !== statuses[region.id] && statuses[region.id] !== 'clear')
+    if (!ended.length && !realerted.length) return
+    const stamp = Date.now()
+    setClearedAt((current) => {
+      const next = { ...current }
+      for (const region of realerted) delete next[region.id]
+      for (const region of ended) next[region.id] = stamp
+      return next
+    })
+  }, [statuses])
+
+  const clearedIds = new Set(
+    regions
+      .filter((region) => statuses[region.id] === 'clear' && tickAt - (clearedAt[region.id] ?? 0) < CLEARED_NOTICE_MS)
+      .map((region) => region.id),
+  )
+  const visualStateOf = (regionId: string) => (clearedIds.has(regionId) ? 'cleared' : statuses[regionId] ?? 'unknown')
   const regionLabels = Object.fromEntries(
     regions.map((region) => {
       const state = statuses[region.id] ?? 'unknown'
@@ -543,7 +509,9 @@ function App() {
         ? t(levelKeys[level])
         : state === 'partial' && count
           ? `${t('status.partial')} · ${count}`
-          : t(statusKeys[state])
+          : clearedIds.has(region.id)
+            ? t('status.cleared')
+            : t(statusKeys[state])
       return [region.id, label]
     }),
   ) as Record<string, string>
@@ -559,7 +527,7 @@ function App() {
     ? typeFilteredAlerts.filter((alert) => getAlertRegionId(alert) === selectedRegion.id && getAlertScope(alert) === 'oblast')
     : []
   const selectedRaions = selectedRegion ? summaries[selectedRegion.id]?.raions ?? [] : []
-  const sourceUrl = feedSource === 'neptun.in.ua' ? 'https://neptun.in.ua/' : 'https://alerts.in.ua/'
+  const sourceUrl = 'https://map.ukrainealarm.com/'
   const displayTitle = useCallback((region: Region) => regionTitle(lang, region.id, region.title), [lang])
   const mapRegions = useMemo(
     () => regions.map((region) => ({ ...region, title: regionTitle(lang, region.id, region.title) })),
@@ -587,9 +555,8 @@ function App() {
       return statusOrder[leftStatus] - statusOrder[rightStatus] || leftRank - rightRank || displayTitle(left).localeCompare(displayTitle(right), lang)
     })
 
-  const usingStream = updateMode === 'ws'
   const usingOfficialLive = updateMode === 'live'
-  const needsBackend = updateMode === '20s' && !pollingAvailable
+  const needsBackend = !pollingAvailable
   const feedReady = !needsBackend && connection === 'live'
 
   const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
@@ -600,11 +567,9 @@ function App() {
     : needsBackend
       ? t('headline.needsBackend')
       : connection === 'loading'
-        ? usingStream ? t('headline.connectingStream') : t('headline.syncing')
+        ? t('headline.syncing')
         : connection === 'error'
-          ? usingStream
-            ? updatedAt ? t('headline.streamInterrupted') : t('headline.streamFailed')
-            : updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
+          ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
           : activeCount > 0
             ? wholeRedCount
               ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
@@ -750,7 +715,7 @@ function App() {
         </div>
         <div className="topbar-status" aria-live="polite">
           <span className={`connection-dot connection-${usingOfficialLive ? 'live' : needsBackend ? 'error' : connection}`} />
-          <span>{usingOfficialLive ? t('conn.official') : needsBackend ? t('conn.needsBackend') : connection === 'live' ? usingStream ? t('conn.stream') : t('conn.polling') : connection === 'error' ? usingStream ? t('conn.reconnecting') : t('conn.offline') : t('conn.connecting')}</span>
+          <span>{usingOfficialLive ? t('conn.official') : needsBackend ? t('conn.needsBackend') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 
@@ -791,7 +756,7 @@ function App() {
             </div>
           )}
           <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? t('banner.stream') : updatedAt ? t('banner.received', { time: formatClock(lang, updatedAt.toISOString()) }) : t('banner.waiting')}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingStream || usingOfficialLive || !pollingAvailable} hidden={usingStream || usingOfficialLive || !pollingAvailable} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingOfficialLive || !pollingAvailable} hidden={usingOfficialLive || !pollingAvailable} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -800,14 +765,11 @@ function App() {
       <div className="update-mode-bar">
         <div className="update-mode-copy">
           <span className="eyebrow">{t('mode.eyebrow')}</span>
-          <strong>{usingOfficialLive ? t('mode.official') : usingStream ? t('mode.stream') : pollingAvailable ? t('mode.polling') : t('mode.needsBackend')}</strong>
+          <strong>{usingOfficialLive ? t('mode.official') : pollingAvailable ? t('mode.polling') : t('mode.needsBackend')}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label={t('mode.aria')}>
-          <button type="button" className={usingStream ? 'filter-active' : ''} aria-pressed={usingStream} onClick={() => setUpdateMode('ws')} title={t('mode.instantHint')}>
-            <Zap size={14} /> {t('mode.instant')}
-          </button>
-          <button type="button" className={updateMode === '20s' ? 'filter-active' : ''} aria-pressed={updateMode === '20s'} onClick={() => setUpdateMode('20s')} title={pollingAvailable ? t('mode.pollingHint') : t('mode.pollingUnavailableHint')}>
-            <RefreshCw size={14} /> {t('mode.20s')}
+          <button type="button" className={updateMode === 'poll' ? 'filter-active' : ''} aria-pressed={updateMode === 'poll'} onClick={() => setUpdateMode('poll')} title={pollingAvailable ? t('mode.pollingHint') : t('mode.pollingUnavailableHint')}>
+            <RefreshCw size={14} /> {t('mode.poll')}
           </button>
           <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title={t('mode.liveHint')}>
             <RadioTower size={14} /> {t('mode.live')}
@@ -827,8 +789,8 @@ function App() {
           <WifiOff size={16} />
           <span>{updatedAt
             ? t('stale.withData', { time: formatClock(lang, updatedAt.toISOString()) })
-            : usingStream ? t('stale.stream') : t('stale.polling')}</span>
-          {!usingStream && <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>}
+            : t('stale.polling')}</span>
+          <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>
         </div>
       )}
 
@@ -899,7 +861,7 @@ function App() {
 
           {selectedRegion && (
             <div className="selected-region" aria-live="polite">
-              <div className={`selected-indicator state-${statuses[selectedRegion.id] ?? 'unknown'}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}`} />
+              <div className={`selected-indicator state-${visualStateOf(selectedRegion.id)}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}`} />
               <div className="selected-region-copy">
                 <strong>{displayTitle(selectedRegion)}</strong>
                 <span>{regionLabels[selectedRegion.id]}</span>
@@ -1046,7 +1008,7 @@ function App() {
 
           <div className="region-list">
             {visibleRegions.map((region) => {
-              const state = statuses[region.id] ?? 'unknown'
+              const visualState = visualStateOf(region.id)
               const level = regionLevels[region.id]
               return (
                 <button
@@ -1055,9 +1017,9 @@ function App() {
                   type="button"
                   onClick={() => setSelectedId(region.id)}
                 >
-                  <span className={`row-marker state-${state}${level ? ` level-${level}` : ''}`} />
+                  <span className={`row-marker state-${visualState}${level ? ` level-${level}` : ''}`} />
                   <span className="row-name">{displayTitle(region)}</span>
-                  <span className={`row-status status-label-${state}${level ? ` level-${level}` : ''}`}>{regionLabels[region.id]}</span>
+                  <span className={`row-status status-label-${visualState}${level ? ` level-${level}` : ''}`}>{regionLabels[region.id]}</span>
                   <ArrowUpRight size={14} className="row-arrow" />
                 </button>
               )
@@ -1068,7 +1030,7 @@ function App() {
           <div className="region-panel-footer">
             <div className="feed-summary"><span>{standingAlertCount}</span><p>{t('panel.standing', { count: standingAlertCount })}</p></div>
             <a href={sourceUrl} target="_blank" rel="noreferrer" className="source-link">
-              <Wifi size={14} /> {t('panel.source', { source: feedSource || 'alerts.in.ua API' })} <ArrowUpRight size={13} />
+              <Wifi size={14} /> {t('panel.source', { source: feedSource || 'api.ukrainealarm.com' })} <ArrowUpRight size={13} />
             </a>
           </div>
 
@@ -1095,7 +1057,7 @@ function App() {
         <p>{t('footer.disclaimer')}</p>
         <span>
           {t('footer.borders')} <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
-          {feedSource === 'neptun.in.ua' && <> · {t('footer.data')} <a href="https://neptun.in.ua/" target="_blank" rel="noreferrer">{t('footer.neptunSource')}</a></>}
+          {feedSource && <> · {t('footer.data')} <a href={sourceUrl} target="_blank" rel="noreferrer">{t('footer.alarmSource')}</a></>}
         </span>
       </footer>
     </main>

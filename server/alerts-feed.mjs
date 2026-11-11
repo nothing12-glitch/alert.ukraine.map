@@ -1,78 +1,58 @@
-import { formatDuration, formatStartedAt, neptunAlertsUrl, normalizeNeptunFeed } from '../shared/neptun-alerts.mjs'
+import { oblastByRegionId } from '../shared/ukraine-alarm-regions.mjs'
+import {
+  normalizeUkraineAlarmFeed,
+  ukraineAlarmAlertsUrl,
+  ukraineAlarmSource,
+} from '../shared/ukraine-alarm-alerts.mjs'
 
-const activeAlertsUrl = 'https://api.alerts.in.ua/v1/alerts/active.json'
-const neptunUserAgent = 'alert-ukraine-map/1.0 (informational air-alert map)'
+const requestTimeout = 12_000
 
-const alertTypeLabels = {
-  air_raid: 'Повітряна тривога',
-  artillery_shelling: 'Загроза артобстрілу',
-  urban_fights: 'Вуличні бої',
-  chemical: 'Хімічна загроза',
-  nuclear: 'Радіаційна небезпека',
-}
+// UkraineAlarm віддає один запит на хвилину на ключ, тож частіше питати немає сенсу.
+export const feedCacheMs = 60_000
 
-function normalizeApiAlert(alert) {
-  const location = String(alert.location_title ?? '').trim()
-  const region = String(alert.location_oblast ?? '').trim() || location
-  const startedAtValue = String(alert.started_at ?? '')
-  const scope = location.toLocaleLowerCase('uk') === region.toLocaleLowerCase('uk') ? 'oblast' : 'raion'
+// Джерело могло «з'їсти» ліміт або на хвилину бути недоступним — віддаємо останні свіжі дані замість помилки.
+const staleFeedCacheMs = 10 * 60_000
 
-  return {
-    location,
-    region,
-    scope,
-    type: alertTypeLabels[alert.alert_type] ?? String(alert.alert_type ?? 'Інша загроза'),
-    startedAt: formatStartedAt(startedAtValue),
-    startedAtIso: startedAtValue,
-    duration: startedAtValue ? formatDuration(startedAtValue) : '',
-    alertLevel: String(alert.alert_level ?? ''),
-  }
-}
+const oblastIndex = new Map(Object.entries(oblastByRegionId))
 
-async function fetchAlertsInUa(token) {
-  const response = await fetch(activeAlertsUrl, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    signal: AbortSignal.timeout(12_000),
-  })
+let cachedFeed = null
+let cachedAt = 0
+let pendingRequest = null
 
-  if (!response.ok) throw new Error(`alerts.in.ua returned HTTP ${response.status}`)
-
-  const payload = await response.json()
-  if (!Array.isArray(payload.alerts)) throw new Error('alerts.in.ua returned an invalid response')
-
-  const alertsByKey = new Map()
-  for (const rawAlert of payload.alerts) {
-    const alert = normalizeApiAlert(rawAlert)
-    if (!alert.location || !alert.type) continue
-    const key = `${alert.scope}|${alert.region.toLocaleLowerCase('uk')}|${alert.location.toLocaleLowerCase('uk')}|${alert.type}`
-    if (!alertsByKey.has(key)) alertsByKey.set(key, alert)
-  }
-
-  return {
-    source: 'alerts.in.ua',
-    fetchedAt: new Date().toISOString(),
-    alerts: [...alertsByKey.values()],
-  }
-}
-
-async function fetchNeptunAlerts() {
-  const response = await fetch(neptunAlertsUrl, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': neptunUserAgent,
-    },
-    signal: AbortSignal.timeout(12_000),
-  })
-
-  if (!response.ok) throw new Error(`neptun.in.ua returned HTTP ${response.status}`)
-
-  return normalizeNeptunFeed(await response.json())
-}
-
-export function fetchAlertsFeed(token = process.env.ALERTS_IN_UA_TOKEN) {
+export async function fetchAlertsFeed(token = process.env.UKRAINE_ALARM_TOKEN) {
   const trimmedToken = token?.trim()
-  return trimmedToken ? fetchAlertsInUa(trimmedToken) : fetchNeptunAlerts()
+  if (!trimmedToken) throw new Error('UKRAINE_ALARM_TOKEN is not configured')
+
+  const response = await fetch(ukraineAlarmAlertsUrl, {
+    headers: {
+      Accept: 'application/json',
+      authorization: trimmedToken,
+    },
+    signal: AbortSignal.timeout(requestTimeout),
+  })
+
+  if (!response.ok) throw new Error(`${ukraineAlarmSource} returned HTTP ${response.status}`)
+
+  return normalizeUkraineAlarmFeed(await response.json(), oblastIndex)
+}
+
+export function getAlertsFeed(token = process.env.UKRAINE_ALARM_TOKEN) {
+  if (cachedFeed && Date.now() - cachedAt < feedCacheMs) return Promise.resolve(cachedFeed)
+  if (pendingRequest) return pendingRequest
+
+  pendingRequest = fetchAlertsFeed(token)
+    .then((feed) => {
+      cachedFeed = feed
+      cachedAt = Date.now()
+      return feed
+    })
+    .catch((error) => {
+      if (cachedFeed && Date.now() - cachedAt < staleFeedCacheMs) return cachedFeed
+      throw error
+    })
+    .finally(() => {
+      pendingRequest = null
+    })
+
+  return pendingRequest
 }

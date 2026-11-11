@@ -553,28 +553,6 @@
   stroke: #dcae45;
 }
 
-.region-badges {
-  pointer-events: none;
-}
-
-.region-badge circle {
-  fill: #1b2b25;
-  stroke: #fbfdfb;
-  stroke-width: 3;
-}
-
-.region-badge.level-yellow circle {
-  fill: #9a7212;
-}
-
-.region-badge text {
-  fill: #ffffff;
-  font-family: var(--mono);
-  font-size: 16px;
-  font-weight: 700;
-  text-anchor: middle;
-}
-
 .region-shape.state-nominal {
   fill: var(--map-nominal);
 }
@@ -745,6 +723,12 @@
 .row-marker.state-unknown,
 .selected-indicator.state-unknown {
   background: var(--map-unknown);
+}
+
+.row-marker.state-cleared,
+.selected-indicator.state-cleared {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--teal);
 }
 
 .selected-region {
@@ -944,6 +928,11 @@
 
 .status-label-clear {
   color: #77847c;
+}
+
+.status-label-cleared {
+  color: var(--teal);
+  font-weight: 650;
 }
 
 .status-label-unknown {
@@ -1587,19 +1576,6 @@
   stroke: #d8a52f;
 }
 
-:root[data-theme='dark'] .region-badge circle {
-  fill: #eef6f1;
-  stroke: #12201b;
-}
-
-:root[data-theme='dark'] .region-badge.level-yellow circle {
-  fill: #e6bd4c;
-}
-
-:root[data-theme='dark'] .region-badge text {
-  fill: #12201b;
-}
-
 :root[data-theme='dark'] .region-outline-halo {
   stroke: #0e1714;
 }
@@ -1671,6 +1647,10 @@
 
 :root[data-theme='dark'] .status-label-partial {
   color: #e09a86;
+}
+
+:root[data-theme='dark'] .status-label-cleared {
+  color: var(--teal);
 }
 
 :root[data-theme='dark'] .type-filter,

@@ -1,12 +1,8 @@
 import react from '@vitejs/plugin-react'
-import { fetchAlertsFeed, type AlertFeed } from './server/alerts-feed.mjs'
+import { getAlertsFeed } from './server/alerts-feed.mjs'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 
 function officialAlertsFeed(apiToken: string): Plugin {
-  let cachedFeed: AlertFeed | null = null
-  let cachedAt = 0
-  let pendingRequest: Promise<AlertFeed> | null = null
-
   return {
     name: 'official-alerts-feed',
     configureServer(server) {
@@ -15,25 +11,10 @@ function officialAlertsFeed(apiToken: string): Plugin {
         response.setHeader('cache-control', 'no-store')
 
         try {
-          const now = Date.now()
-          if (cachedFeed && now - cachedAt < 20_000) {
-            response.end(JSON.stringify(cachedFeed))
-            return
-          }
-
-          if (!pendingRequest) {
-            pendingRequest = fetchAlertsFeed(apiToken)
-          }
-
-          const feed = await pendingRequest
-          cachedFeed = feed
-          cachedAt = Date.now()
-          response.end(JSON.stringify(feed))
+          response.end(JSON.stringify(await getAlertsFeed(apiToken)))
         } catch {
           response.statusCode = 502
           response.end(JSON.stringify({ error: 'Не вдалося отримати дані джерела тривог.' }))
-        } finally {
-          pendingRequest = null
         }
       })
     },
@@ -45,6 +26,6 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: process.env.BASE_PATH ?? '/',
-    plugins: [react(), officialAlertsFeed(env.ALERTS_IN_UA_TOKEN ?? '')],
+    plugins: [react(), officialAlertsFeed(env.UKRAINE_ALARM_TOKEN ?? '')],
   }
 })

@@ -1,13 +1,8 @@
 import { createServer } from 'node:http'
-import { fetchAlertsFeed } from './alerts-feed.mjs'
+import { getAlertsFeed } from './alerts-feed.mjs'
 
 const port = Number(process.env.PORT ?? 3000)
 const allowedOrigin = process.env.ALLOWED_ORIGIN ?? '*'
-const cacheDuration = 20_000
-
-let cachedFeed = null
-let cachedAt = 0
-let pendingRequest = null
 
 function sendJson(request, response, status, data) {
   const origin = request.headers.origin
@@ -19,20 +14,6 @@ function sendJson(request, response, status, data) {
   response.setHeader('cache-control', 'no-store')
   response.writeHead(status)
   response.end(JSON.stringify(data))
-}
-
-async function getAlerts() {
-  if (cachedFeed && Date.now() - cachedAt < cacheDuration) return cachedFeed
-  if (pendingRequest) return pendingRequest
-
-  pendingRequest = fetchAlertsFeed()
-  try {
-    cachedFeed = await pendingRequest
-    cachedAt = Date.now()
-    return cachedFeed
-  } finally {
-    pendingRequest = null
-  }
 }
 
 const server = createServer(async (request, response) => {
@@ -56,7 +37,7 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'GET' && request.url === '/api/alerts') {
     try {
-      sendJson(request, response, 200, await getAlerts())
+      sendJson(request, response, 200, await getAlertsFeed())
     } catch {
       sendJson(request, response, 502, { error: 'Не вдалося отримати дані джерела тривог.' })
     }
