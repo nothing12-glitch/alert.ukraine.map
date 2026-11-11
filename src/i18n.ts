@@ -55,6 +55,17 @@ const messages = {
     en: 'Next snapshot check. The source itself can update no more than once a minute.',
     pl: 'Następne sprawdzenie migawki. Samo źródło aktualizuje się nie częściej niż raz na minutę.',
   },
+  'sync.receivedShort': {
+    uk: 'ОТРИМАНО {time}',
+    en: 'RECEIVED {time}',
+    pl: 'OTRZYMANO {time}',
+  },
+  'sync.live': { uk: 'наживо', en: 'live', pl: 'na żywo' },
+  'sync.liveHint': {
+    uk: 'Мапа стежить за джерелом у реальному часі й малює зміну одразу, як тільки знімок з’явиться.',
+    en: 'The map watches the source in real time and draws each change the moment the snapshot appears.',
+    pl: 'Mapa śledzi źródło w czasie rzeczywistym i pokazuje zmianę w chwili pojawienia się migawki.',
+  },
   'banner.refresh': { uk: 'Оновити дані', en: 'Refresh data', pl: 'Odśwież dane' },
 
   'headline.syncing': {

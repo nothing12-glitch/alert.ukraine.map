@@ -1840,9 +1840,30 @@
   font-variant-numeric: tabular-nums;
 }
 
-:root[data-theme='light'] .sync-countdown {
-  border-color: #b9c6bd;
-  color: #35514a;
+/* Обидві позначки живуть у темному банері, тому світла тема не змінює їхній колір. */
+.sync-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid #4f7a68;
+  color: #dbe7e0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sync-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3ecf8e;
+  animation: live-blip 1.6s ease-in-out infinite;
+}
+
+@keyframes live-blip {
+  0% { opacity: 1; box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.55); }
+  60% { opacity: 0.45; box-shadow: 0 0 0 5px rgba(62, 207, 142, 0); }
+  100% { opacity: 1; box-shadow: 0 0 0 0 rgba(62, 207, 142, 0); }
 }
 
 /* Стрічка змін: останні події в один рядок, кожна веде на свою область. */

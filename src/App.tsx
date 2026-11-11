@@ -372,11 +372,12 @@ function readInitialTheme(): Theme {
 }
 
 // Лічильник тікає окремо від App: інакше щосекунди перемальовувалася б уся мапа.
-function FreshnessClock({ lang, updatedAt, lastPollAt, intervalMs }: {
+function FreshnessClock({ lang, updatedAt, lastPollAt, intervalMs, live }: {
   lang: Language
   updatedAt: Date | null
   lastPollAt: number
   intervalMs: number
+  live: boolean
 }) {
   const [now, setNow] = useState(() => Date.now())
 
@@ -397,13 +398,26 @@ function FreshnessClock({ lang, updatedAt, lastPollAt, intervalMs }: {
   return (
     <div className="sync-time">
       <Clock3 size={15} />
-      <span>{translate(lang, 'sync.received', {
-        time: formatClock(lang, updatedAt.toISOString()),
-        age: formatAge(lang, (now - updatedAt.getTime()) / 1000),
-      })}</span>
-      <span className="sync-countdown" title={translate(lang, 'sync.nextHint')}>
-        {translate(lang, 'sync.next', { seconds: Math.max(0, Math.ceil((lastPollAt + intervalMs - now) / 1000)) })}
-      </span>
+      {live ? (
+        // У режимі «Наживо» не обіцяємо майбутню перевірку: мапа вже малює зміну
+        // одразу, як тільки джерело видає новий знімок.
+        <span>{translate(lang, 'sync.receivedShort', { time: formatClock(lang, updatedAt.toISOString()) })}</span>
+      ) : (
+        <span>{translate(lang, 'sync.received', {
+          time: formatClock(lang, updatedAt.toISOString()),
+          age: formatAge(lang, (now - updatedAt.getTime()) / 1000),
+        })}</span>
+      )}
+      {live ? (
+        <span className="sync-live" title={translate(lang, 'sync.liveHint')}>
+          <i />
+          {translate(lang, 'sync.live')}
+        </span>
+      ) : (
+        <span className="sync-countdown" title={translate(lang, 'sync.nextHint')}>
+          {translate(lang, 'sync.next', { seconds: Math.max(0, Math.ceil((lastPollAt + intervalMs - now) / 1000)) })}
+        </span>
+      )}
     </div>
   )
 }
@@ -920,7 +934,7 @@ function App() {
               })}</span>
             </div>
           )}
-          <FreshnessClock lang={lang} updatedAt={updatedAt} lastPollAt={lastPollAt} intervalMs={pollInterval} />
+          <FreshnessClock lang={lang} updatedAt={updatedAt} lastPollAt={lastPollAt} intervalMs={pollInterval} live={updateMode === 'live'} />
           <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
