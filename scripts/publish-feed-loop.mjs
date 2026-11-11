@@ -62,19 +62,30 @@ async function pruneSnapshots(now) {
   await Promise.all(stale.map((name) => rm(path.join(snapshotDirectory, name))))
 }
 
-async function pushFeedBranch(token, repository) {
-  await rm(pushDirectory, { recursive: true, force: true })
+const identity = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com']
+const git = (args, options) => run('git', args, { cwd: pushDirectory, ...options })
+
+// Чернетковий репозиторій не перестворюється щохвилини: тоді push віддає лише нові
+// blobs замість усього вмісту, і хвилинний ритм не ламається через повільний бої.
+// На гілці feed завжди лежить один коміт — його перевипускаємо через --amend.
+let pushRepoReady = false
+
+async function preparePushRepo() {
+  if (pushRepoReady) return
   await mkdir(pushDirectory, { recursive: true })
+  await git(['init', '--quiet'])
+  await git([...identity, 'commit', '--quiet', '--allow-empty', '-m', 'Alerts feed scratch'])
+  pushRepoReady = true
+}
+
+async function pushFeedBranch(token, repository) {
+  await preparePushRepo()
 
   const files = [alertsFileName, ...(await readdir(snapshotDirectory)).filter(isSnapshotFileName)]
   await Promise.all(files.map((name) => copyFile(path.join(snapshotDirectory, name), path.join(pushDirectory, name))))
 
-  const git = (args, options) => run('git', args, { cwd: pushDirectory, ...options })
-  const identity = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com']
-
-  await git(['init', '--quiet'])
   await git(['add', '-A'])
-  await git([...identity, 'commit', '--quiet', '-m', 'Update alerts feed snapshot'])
+  await git([...identity, 'commit', '--amend', '--quiet', '--allow-empty', '-m', 'Update alerts feed snapshot'])
   await git(['push', '--quiet', '--force', feedRemoteUrl(token, repository), 'HEAD:feed'], { timeout: pushTimeoutMs })
 }
 
@@ -137,12 +148,13 @@ async function main() {
   let failures = 0
 
   while (Date.now() - startedAt < budgetMs) {
+    const iterationStartedAt = Date.now()
     try {
       await publishSnapshot()
       await pruneSnapshots(new Date())
       await pushFeedBranch(token, repository)
       failures = 0
-      log(`Published ${await describeSnapshot()}.`)
+      log(`Published ${await describeSnapshot()} in ${((Date.now() - iterationStartedAt) / 1000).toFixed(1)}s.`)
     } catch (error) {
       failures += 1
       log(`Iteration failed (${failures}/${maxConsecutiveFailures}): ${redact(error.output ?? error.message ?? error)}`)
