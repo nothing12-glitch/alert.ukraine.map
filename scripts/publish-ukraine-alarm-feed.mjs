@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { alertsFileName, minuteStamp, snapshotFileName } from '../shared/feed-snapshots.mjs'
 import { oblastByRegionId } from '../shared/ukraine-alarm-regions.mjs'
 import {
   normalizeUkraineAlarmFeed,
@@ -8,11 +9,11 @@ import {
 } from '../shared/ukraine-alarm-alerts.mjs'
 
 const requestTimeoutMs = 15_000
-const defaultOutput = '.feed/alerts.json'
+const defaultDirectory = '.feed'
 
-function resolveOutputPath() {
-  const argument = process.argv.find((entry) => entry.startsWith('--out='))
-  return path.resolve(argument ? argument.slice('--out='.length) : defaultOutput)
+function resolveDirectory() {
+  const argument = process.argv.find((entry) => entry.startsWith('--dir='))
+  return path.resolve(argument ? argument.slice('--dir='.length) : defaultDirectory)
 }
 
 async function main() {
@@ -31,11 +32,20 @@ async function main() {
   }
 
   const feed = normalizeUkraineAlarmFeed(await response.json(), new Map(Object.entries(oblastByRegionId)))
-  const outputPath = resolveOutputPath()
+  const directory = resolveDirectory()
+  const payload = `${JSON.stringify(feed)}\n`
 
-  await mkdir(path.dirname(outputPath), { recursive: true })
-  await writeFile(outputPath, `${JSON.stringify(feed)}\n`, 'utf8')
-  console.log(`Wrote ${feed.alerts.length} alerts to ${outputPath}`)
+  await mkdir(directory, { recursive: true })
+
+  // Хвилинний файл — те, що читає браузер: його URL ніколи не переписується.
+  // alerts.json лишається резервом на випадок, коли жоден з свіжих знімків недоступний.
+  const stamp = minuteStamp(new Date(feed.fetchedAt))
+  await Promise.all([
+    writeFile(path.join(directory, snapshotFileName(stamp)), payload, 'utf8'),
+    writeFile(path.join(directory, alertsFileName), payload, 'utf8'),
+  ])
+
+  console.log(`Wrote ${feed.alerts.length} alerts as ${stamp} to ${directory}`)
 }
 
 await main()

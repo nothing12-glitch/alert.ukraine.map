@@ -330,53 +330,6 @@
   cursor: not-allowed;
 }
 
-.official-live-view {
-  margin: 24px 0 32px;
-}
-
-.official-live-view[hidden],
-.workspace.is-hidden {
-  display: none;
-}
-
-.official-live-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 14px;
-}
-
-.official-live-heading h2 {
-  margin: 5px 0 0;
-  color: var(--ink);
-  font-size: 20px;
-  line-height: 1.25;
-}
-
-.official-live-heading a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--teal);
-  font-size: 11px;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.official-live-heading a:hover {
-  text-decoration: underline;
-}
-
-.official-live-frame {
-  display: block;
-  width: 100%;
-  height: min(78vh, 880px);
-  min-height: 600px;
-  border: 1px solid var(--line);
-  background: #eaf0ec;
-}
-
 .stale-notice {
   display: flex;
   align-items: center;
@@ -726,6 +679,17 @@
   background: var(--map-unknown);
 }
 
+.legend-pulse {
+  background: var(--map-active);
+  animation: legend-pulse 1.9s ease-out infinite;
+}
+
+@keyframes legend-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--map-active) 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 .row-marker.state-cleared,
 .selected-indicator.state-cleared {
   background: transparent;
@@ -966,7 +930,7 @@
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 0.8fr)) minmax(0, 1.6fr);
   margin-bottom: 13px;
   border-block: 1px solid var(--line);
 }
@@ -1769,11 +1733,6 @@
   border-top-color: var(--line);
 }
 
-:root[data-theme='dark'] .official-live-frame {
-  border-color: var(--line);
-  background: #101c17;
-}
-
 :root[data-theme='dark'] ::selection {
   color: #0e1714;
   background: #74d3ae;
@@ -1796,9 +1755,6 @@
   .banner-partial { max-width: none; }
   .update-mode-bar { flex-wrap: wrap; gap: 8px 12px; padding: 9px 10px; }
   .update-mode-copy { flex-basis: calc(100% - 130px); }
-  .official-live-view { margin-top: 18px; }
-  .official-live-heading { align-items: flex-start; }
-  .official-live-frame { height: 75vh; min-height: 520px; }
   .banner-icon { width: 38px; height: 38px; }
   .banner-copy h1 { font-size: 17px; }
   .sync-time { gap: 5px; font-size: 9px; }
@@ -1844,6 +1800,128 @@
   .metric-strip span { font-size: 7px; }
   .region-actions button { padding-inline: 7px; }
   .app-footer { flex-direction: column; gap: 8px; }
+}
+
+/* Імпульс: та сама заповнена стрічка, що й контур, анімується лише прозорість. */
+.region-pulse {
+  stroke: none;
+  fill-rule: evenodd;
+  fill: var(--map-active);
+  opacity: 0;
+  pointer-events: none;
+  animation: region-pulse 1.9s ease-out 2;
+}
+
+.region-pulse.level-yellow {
+  fill: var(--map-yellow);
+}
+
+.region-pulse.state-clear {
+  fill: var(--teal);
+}
+
+@keyframes region-pulse {
+  0% { opacity: 0.78; }
+  55% { opacity: 0.14; }
+  100% { opacity: 0; }
+}
+
+/* Лічильник свіжості тримаємо в одному рядку з часом знімка. */
+.sync-time {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sync-countdown {
+  padding: 2px 6px;
+  border: 1px solid #52615b;
+  color: #dbe7e0;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme='light'] .sync-countdown {
+  border-color: #b9c6bd;
+  color: #35514a;
+}
+
+/* Стрічка змін: останні події в один рядок, кожна веде на свою область. */
+.change-ticker {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  background: #f2f6f2;
+}
+
+:root[data-theme='dark'] .change-ticker {
+  background: #121d18;
+}
+
+.change-ticker .eyebrow {
+  flex: 0 0 auto;
+}
+
+.change-ticker ul {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.change-ticker li button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  color: inherit;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.change-ticker li button:hover {
+  border-color: var(--teal);
+  background: rgba(20, 122, 106, 0.08);
+}
+
+.ticker-time {
+  color: var(--muted);
+}
+
+.ticker-empty {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* Годинний графік: по одній парі стовпчиків на хвилинний знімок. */
+.metric-spark {
+  align-content: center;
+}
+
+.hourly-spark {
+  width: 100%;
+  height: 24px;
+}
+
+.spark-red {
+  fill: var(--map-active);
+}
+
+.spark-yellow {
+  fill: var(--map-yellow);
 }
 
 @media (prefers-reduced-motion: reduce) {

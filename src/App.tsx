@@ -31,6 +31,7 @@ import {
   formatClock,
   formatDateTime,
   formatDuration,
+  formatAge,
   languageOptions,
   regionTitle,
   regionWord,
@@ -39,7 +40,7 @@ import {
   type MessageKey,
 } from './i18n'
 import { useI18n } from './i18n-context'
-import type { AlertState, ThreatLevel } from './map-types'
+import type { AlertState, Pulse, ThreatLevel } from './map-types'
 import './App.css'
 
 type ConnectionState = 'loading' | 'live' | 'error'
@@ -63,20 +64,60 @@ type UpdateMode = 'poll' | 'live'
 type Theme = 'light' | 'dark'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
+type HourlySample = { minute: number; active: number; red: number }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
-// Без власного бекенду мапа читає знімок, який опублікує workflow у гілці feed.
-const staticFeedUrl = (import.meta.env.VITE_ALERTS_FEED_URL ?? '').trim() ||
-  'https://raw.githubusercontent.com/nothing12-glitch/alert.ukraine.map/feed/alerts.json'
+// Без власного бекенду мапа читає хвилинні знімки, які публікує workflow у гілці feed.
+const feedSnapshotBase = (import.meta.env.VITE_ALERTS_FEED_URL ?? '').trim() ||
+  'https://raw.githubusercontent.com/nothing12-glitch/alert.ukraine.map/feed/'
 const useProxyFeed = import.meta.env.DEV || Boolean(apiBaseUrl)
 
-// Знімок мав би свіжати кожні 5 хвилин; понад чверть години без оновлення — вже підозріло.
-const staleAfterMs = 15 * 60_000
+// Офіційне джерело дає не більше одного запиту на хвилину, тож знімок свіжає щохвилини.
+// Понад три пропущені хвилини — це вже збій публікації, а не просто спокійне небо.
+const staleAfterMs = 4 * 60_000
+const requestTimeoutMs = 12_000
 
-// Знімок у гілці feed публікують раз на 5 хвилин, тому міняємо лише відро кешу CDN.
-function feedRequestUrl() {
-  if (useProxyFeed) return `${apiBaseUrl}/api/alerts`
-  return `${staticFeedUrl}?bucket=${Math.floor(Date.now() / 300_000)}`
+// Позначка знімка збігається з назвою файла у гілці feed (shared/feed-snapshots.mjs).
+function minuteStampAt(offsetMinutes: number) {
+  const date = new Date(Date.now() + offsetMinutes * 60_000)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`
+}
+
+// Хвилинний знімок ніколи не переписують, тому його можна брати з кешу браузера:
+// часті опитування не перетворюються на зайві мережеві запити. Попередню хвилину
+// беремо тому, що поточну публікують лише на початку наступної.
+function feedRequests() {
+  if (useProxyFeed) return [{ url: `${apiBaseUrl}/api/alerts`, cache: 'no-store' as RequestCache }]
+  return [
+    { url: `${feedSnapshotBase}alerts-${minuteStampAt(-1)}.json`, cache: 'default' as RequestCache },
+    { url: `${feedSnapshotBase}alerts-${minuteStampAt(-2)}.json`, cache: 'default' as RequestCache },
+    { url: `${feedSnapshotBase}alerts.json`, cache: 'no-store' as RequestCache },
+  ]
+}
+
+async function readFeedSnapshot() {
+  let lastError: unknown
+
+  for (const { url, cache } of feedRequests()) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        cache,
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      })
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+      const feed = await response.json() as AlertFeed
+      if (!Array.isArray(feed.alerts) || !feed.fetchedAt) throw new Error('Некоректна відповідь джерела.')
+      return feed
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError
 }
 
 const regionMetadata: Record<string, { title: string; reportTitle: string }> = {
@@ -135,6 +176,13 @@ const statusOrder: Record<AlertState, number> = {
 }
 
 const CLEARED_NOTICE_MS = 5 * 60_000
+const pollIntervalMs = 20_000
+const livePollIntervalMs = 5_000
+// Понад шість кілець на мапі вже читаються як шум, а не як зміна.
+const pulseLimit = 6
+// Графік тримає по одному зрізу на хвилинний знімок за останню годину.
+const hourlyBucketCount = 60
+const tickerLimit = 8
 
 function normalizeLocation(value: string) {
   return value.trim().toLocaleLowerCase('uk').replaceAll('’', "'").replace(/\s+/g, ' ')
@@ -182,6 +230,25 @@ function summarizeRegions(alerts: OfficialAlert[]) {
   }
 
   return summaries
+}
+
+function snapshotCounts(alerts: OfficialAlert[]) {
+  const summaries = Object.values(summarizeRegions(alerts))
+  return {
+    active: summaries.filter((summary) => summary.wholeLevel || summary.partialLevel).length,
+    red: summaries.filter((summary) => summary.wholeLevel === 'red' || summary.partialLevel === 'red').length,
+  }
+}
+
+// Додаємо зріз до годинної вибірки. Та сама хвилина переглядається, а не дублюється,
+// а занадто старі зрізи відсікаються. Якщо нічого не змінилось — повертаємо той самий
+// масив, щоб дарма не писати в localStorage на кожному опитуванні.
+function appendHourlySample(samples: HourlySample[], sample: HourlySample) {
+  const recent = samples.filter((item) => item.minute > sample.minute - hourlyBucketCount)
+  const last = recent[recent.length - 1]
+  if (last?.minute !== sample.minute) return [...recent, sample]
+  if (last.active === sample.active && last.red === sample.red && recent.length === samples.length) return samples
+  return [...recent.slice(0, -1), sample]
 }
 
 function getAlertKey(alert: OfficialAlert) {
@@ -304,6 +371,73 @@ function readInitialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+// Лічильник тікає окремо від App: інакше щосекунди перемальовувалася б уся мапа.
+function FreshnessClock({ lang, updatedAt, lastPollAt, intervalMs }: {
+  lang: Language
+  updatedAt: Date | null
+  lastPollAt: number
+  intervalMs: number
+}) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  if (!updatedAt) {
+    return (
+      <div className="sync-time">
+        <Clock3 size={15} />
+        <span>{translate(lang, 'banner.waiting')}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="sync-time">
+      <Clock3 size={15} />
+      <span>{translate(lang, 'sync.received', {
+        time: formatClock(lang, updatedAt.toISOString()),
+        age: formatAge(lang, (now - updatedAt.getTime()) / 1000),
+      })}</span>
+      <span className="sync-countdown" title={translate(lang, 'sync.nextHint')}>
+        {translate(lang, 'sync.next', { seconds: Math.max(0, Math.ceil((lastPollAt + intervalMs - now) / 1000)) })}
+      </span>
+    </div>
+  )
+}
+
+// Годинний графік: по одній парі стовпчиків на хвилинний знімок. Проміжки між
+// стовпчиками показують, що публікація пропадала, а не що тривог не було.
+function HourlySparkline({ samples, lang }: { samples: HourlySample[]; lang: Language }) {
+  const latestMinute = samples.length ? samples[samples.length - 1].minute : 0
+  const firstMinute = samples.length ? Math.max(latestMinute - hourlyBucketCount + 1, samples[0].minute) : 0
+  // Поки знімків менше за годину, вікно звужується до того, що реально є: інакше
+  // графік виглядав би порожнім ціну першої години після запуску сторінки.
+  const span = Math.max(1, latestMinute - firstMinute + 1)
+  const peak = Math.max(1, ...samples.map((sample) => sample.active))
+  const slot = 100 / span
+  const barWidth = Math.min(slot * 0.72, 8)
+
+  return (
+    <svg className="hourly-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img" aria-label={translate(lang, 'spark.aria')}>
+      {samples.filter((sample) => sample.minute >= firstMinute).map((sample) => {
+        const x = (sample.minute - firstMinute) * slot
+        const redHeight = (sample.red / peak) * 24
+        const yellowHeight = ((sample.active - sample.red) / peak) * 24
+
+        return (
+          <g key={sample.minute}>
+            {redHeight > 0 && <rect className="spark-red" x={x} y={24 - redHeight} width={barWidth} height={redHeight} />}
+            {yellowHeight > 0 && <rect className="spark-yellow" x={x} y={24 - redHeight - yellowHeight} width={barWidth} height={yellowHeight} />}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 function App() {
   const { lang, setLang, t } = useI18n()
   const [alerts, setAlerts] = useState<OfficialAlert[]>([])
@@ -314,9 +448,13 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(readInitialRegion)
   const [focusRequest, setFocusRequest] = useState<{ regionId: string; token: number } | null>(null)
+  const focusSequence = useRef(0)
   const [theme, setTheme] = useState<Theme>(readInitialTheme)
   const [toast, setToast] = useState<{ id: string; events: ToastEvent[] } | null>(null)
   const [clearedAt, setClearedAt] = useState<Record<string, number>>({})
+  const [pulse, setPulse] = useState<Pulse>({ token: 0, items: [] })
+  const [lastPollAt, setLastPollAt] = useState(() => Date.now())
+  const [hourlySamples, setHourlySamples] = useState<HourlySample[]>(() => readStored<HourlySample[]>('alert-map-hourly', []))
   const [copied, setCopied] = useState(false)
   const [tickAt, setTickAt] = useState(() => Date.now())
   const [search, setSearch] = useState('')
@@ -334,7 +472,7 @@ function App() {
   const [notifyFavoritesOnly, setNotifyFavoritesOnly] = useState(() => readStored('alert-map-notify-favorites-only', false))
   const [notifySound, setNotifySound] = useState(() => readStored('alert-map-notify-sound', true))
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
-  const previousStatuses = useRef<Record<string, AlertState> | null>(null)
+  const previousStates = useRef<Record<string, { state: AlertState; level: ThreatLevel | null }> | null>(null)
   const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang })
 
   useEffect(() => {
@@ -407,26 +545,25 @@ function App() {
     previousAlerts.current = currentAlerts
     setAlerts(feedAlerts)
     setFeedSource(feed.source)
-    setUpdatedAt(new Date(feed.fetchedAt))
-    setIsFresh(Date.now() - new Date(feed.fetchedAt).getTime() < staleAfterMs)
+    const snapshotAt = new Date(feed.fetchedAt)
+    setUpdatedAt(snapshotAt)
+    setIsFresh(Date.now() - snapshotAt.getTime() < staleAfterMs)
     setConnection('live')
+
+    // Годинний графік будуємо з часу самого знімка: пропущена хвилина публікації має
+    // лишити прогалину, а не виглядати як спокійне небо.
+    setHourlySamples((current) => appendHourlySample(
+      current,
+      { minute: Math.floor(snapshotAt.getTime() / 60_000), ...snapshotCounts(feedAlerts) },
+    ))
   }, [notificationsEnabled])
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true)
+    setLastPollAt(Date.now())
 
     try {
-      const response = await fetch(feedRequestUrl(), {
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(12000),
-      })
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-      const feed = await response.json() as AlertFeed
-      if (!Array.isArray(feed.alerts) || !feed.fetchedAt) throw new Error('Некоректна відповідь джерела.')
-      applyFeed(feed)
+      applyFeed(await readFeedSnapshot())
     } catch {
       setConnection('error')
     } finally {
@@ -434,13 +571,12 @@ function App() {
     }
   }, [applyFeed])
 
-  // Через знімок дані змінюються раз на 5 хвилин, а через бекенд — раз на хвилину;
-  // хвилинний інтервал підходить обом шляхам і не впирається в ліміт джерела.
+  // Опитування нічого не змінює на джерелі: воно лише перевіряє, чи з'явився новий
+  // хвилинний знімок. «Наживо» питає частіше, щоб мапа реагувала в перші секунди.
   useEffect(() => {
-    if (updateMode !== 'poll') return
-
+    const interval = updateMode === 'live' ? livePollIntervalMs : pollIntervalMs
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
-    const intervalId = window.setInterval(() => void refresh(), 60_000)
+    const intervalId = window.setInterval(() => void refresh(), interval)
     return () => {
       window.clearTimeout(initialRefresh)
       window.clearInterval(intervalId)
@@ -453,6 +589,7 @@ function App() {
   useEffect(() => writeStored('alert-map-notify-favorites-only', notifyFavoritesOnly), [notifyFavoritesOnly])
   useEffect(() => writeStored('alert-map-notify-sound', notifySound), [notifySound])
   useEffect(() => writeStored('alert-map-update-mode-v2', updateMode), [updateMode])
+  useEffect(() => writeStored('alert-map-hourly', hourlySamples), [hourlySamples])
 
   const typeFilteredAlerts = alerts.filter((alert) => {
     if (typeFilter === 'air') return isAirAlert(alert)
@@ -491,23 +628,39 @@ function App() {
     }),
   ) as Record<string, number>
   // «Відбій» тримаємо деякий час після зняття тривоги: так видно, що область щойно
-  // відійшла, а не просто не має даних.
+  // відійшла, а не просто не має даних. Ті самі зміни дають імпульс на мапі.
   useEffect(() => {
-    const previous = previousStatuses.current
-    previousStatuses.current = statuses
+    const current = Object.fromEntries(regions.map((region): [string, { state: AlertState; level: ThreatLevel | null }] => (
+      [region.id, { state: statuses[region.id] ?? 'unknown', level: regionLevels[region.id] ?? null }]
+    ))) as Record<string, { state: AlertState; level: ThreatLevel | null }>
+    const previous = previousStates.current
+    previousStates.current = current
     if (!previous) return
-    const ended = regions.filter((region) =>
-      (previous[region.id] === 'active' || previous[region.id] === 'partial') && statuses[region.id] === 'clear')
-    const realerted = regions.filter((region) => previous[region.id] !== statuses[region.id] && statuses[region.id] !== 'clear')
-    if (!ended.length && !realerted.length) return
+
+    const alerted = (state: AlertState) => state === 'active' || state === 'partial'
+    // Перший знімок не є зміною: без «unknown» у порівнянні мапа не спалахує кільцями
+    // одразу після завантаження.
+    const changed = regions.filter((region) => previous[region.id].state !== 'unknown'
+      && (previous[region.id].state !== current[region.id].state || previous[region.id].level !== current[region.id].level))
+    if (!changed.length) return
+
     const stamp = Date.now()
-    setClearedAt((current) => {
-      const next = { ...current }
+    setPulse({
+      token: stamp,
+      items: changed.slice(0, pulseLimit).map((region) => ({ regionId: region.id, level: current[region.id].level ?? 'yellow' })),
+    })
+
+    const ended = changed.filter((region) => alerted(previous[region.id].state) && current[region.id].state === 'clear')
+    const realerted = changed.filter((region) => current[region.id].state !== 'clear' && previous[region.id].state !== current[region.id].state)
+    if (!ended.length && !realerted.length) return
+
+    setClearedAt((cleared) => {
+      const next = { ...cleared }
       for (const region of realerted) delete next[region.id]
       for (const region of ended) next[region.id] = stamp
       return next
     })
-  }, [statuses])
+  }, [statuses, regionLevels])
 
   const clearedIds = new Set(
     regions
@@ -570,25 +723,24 @@ function App() {
       return statusOrder[leftStatus] - statusOrder[rightStatus] || leftRank - rightRank || displayTitle(left).localeCompare(displayTitle(right), lang)
     })
 
-  const usingOfficialLive = updateMode === 'live'
   const feedReady = connection === 'live'
+  const pollInterval = updateMode === 'live' ? livePollIntervalMs : pollIntervalMs
+  const recentEvents = activityHistory.slice(0, tickerLimit)
 
-  const showThreatBanner = !usingOfficialLive && feedReady && activeCount > 0
+  const showThreatBanner = feedReady && activeCount > 0
   const wholeRedCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'red').length
   const wholeYellowCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'yellow').length
-  const headline = usingOfficialLive
-    ? t('headline.official')
-    : connection === 'loading'
-      ? t('headline.syncing')
-      : connection === 'error'
-        ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
-        : activeCount > 0
-          ? wholeRedCount
-            ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
-            : wholeYellowCount
-              ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
-              : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
-          : t('headline.none')
+  const headline = connection === 'loading'
+    ? t('headline.syncing')
+    : connection === 'error'
+      ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
+      : activeCount > 0
+        ? wholeRedCount
+          ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
+          : wholeYellowCount
+            ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
+            : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
+        : t('headline.none')
 
   const toggleFavorite = (regionId: string) => {
     setFavorites((current) => current.includes(regionId)
@@ -597,8 +749,9 @@ function App() {
   }
 
   const focusRegion = (regionId: string) => {
+    focusSequence.current += 1
     setSelectedId(regionId)
-    setFocusRequest({ regionId, token: Date.now() })
+    setFocusRequest({ regionId, token: focusSequence.current })
   }
 
   const copySummary = async (region?: Region) => {
@@ -726,8 +879,8 @@ function App() {
           </button>
         </div>
         <div className="topbar-status" aria-live="polite">
-          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : connection === 'error' || !isFresh ? 'error' : connection}`} />
-          <span>{usingOfficialLive ? t('conn.official') : !isFresh ? t('conn.stale') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
+          <span className={`connection-dot connection-${connection === 'error' || !isFresh ? 'error' : connection}`} />
+          <span>{!isFresh ? t('conn.stale') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 
@@ -751,7 +904,7 @@ function App() {
 
       <section className={`alert-banner${showThreatBanner ? ` has-alert level-${redCount ? 'red' : 'yellow'}` : ''}`} aria-live="polite">
         <div className="banner-icon">
-          {usingOfficialLive ? <RadioTower size={22} /> : feedReady && activeCount === 0 ? <CircleCheck size={22} /> : <ShieldAlert size={22} />}
+          {feedReady && activeCount === 0 ? <CircleCheck size={22} /> : <ShieldAlert size={22} />}
         </div>
         <div className="banner-copy">
           <span className="eyebrow">{showThreatBanner ? (redCount ? t('banner.red') : t('banner.yellow')) : t('banner.country')}</span>
@@ -767,8 +920,8 @@ function App() {
               })}</span>
             </div>
           )}
-          <div className="sync-time"><Clock3 size={15} /><span>{usingOfficialLive ? t('banner.stream') : updatedAt ? t('banner.received', { time: formatClock(lang, updatedAt.toISOString()) }) : t('banner.waiting')}</span></div>
-          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing || usingOfficialLive} hidden={usingOfficialLive} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
+          <FreshnessClock lang={lang} updatedAt={updatedAt} lastPollAt={lastPollAt} intervalMs={pollInterval} />
+          <button className="refresh-button" type="button" onClick={() => void refresh()} disabled={isRefreshing} aria-label={t('banner.refresh')} title={t('banner.refresh')}>
             <RefreshCw size={17} className={isRefreshing ? 'spin' : ''} />
           </button>
         </div>
@@ -777,19 +930,19 @@ function App() {
       <div className="update-mode-bar">
         <div className="update-mode-copy">
           <span className="eyebrow">{t('mode.eyebrow')}</span>
-          <strong>{usingOfficialLive ? t('mode.official') : useProxyFeed ? t('mode.polling') : t('mode.snapshot')}</strong>
+          <strong>{useProxyFeed ? t('mode.polling') : t('mode.snapshot')}</strong>
         </div>
         <div className="update-mode-control" role="group" aria-label={t('mode.aria')}>
           <button type="button" className={updateMode === 'poll' ? 'filter-active' : ''} aria-pressed={updateMode === 'poll'} onClick={() => setUpdateMode('poll')} title={t('mode.pollingHint')}>
             <RefreshCw size={14} /> {t('mode.poll')}
           </button>
-          <button type="button" className={usingOfficialLive ? 'filter-active' : ''} aria-pressed={usingOfficialLive} onClick={() => setUpdateMode('live')} title={t('mode.liveHint')}>
+          <button type="button" className={updateMode === 'live' ? 'filter-active' : ''} aria-pressed={updateMode === 'live'} onClick={() => setUpdateMode('live')} title={t('mode.liveHint')}>
             <RadioTower size={14} /> {t('mode.live')}
           </button>
         </div>
       </div>
 
-      {!usingOfficialLive && (connection === 'error' || !isFresh) && (
+      {(connection === 'error' || !isFresh) && (
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
           <span>{!updatedAt
@@ -801,25 +954,28 @@ function App() {
         </div>
       )}
 
-      <section className="official-live-view" hidden={updateMode !== 'live'} aria-label={t('live.aria')}>
-        <div className="official-live-heading">
-          <div>
-            <span className="eyebrow">{t('live.eyebrow')}</span>
-            <h2>{t('live.title')}</h2>
-          </div>
-          <a href="https://map.ukrainealarm.com/" target="_blank" rel="noreferrer">{t('live.open')} <ArrowUpRight size={14} /></a>
-        </div>
-        <iframe
-          className="official-live-frame"
-          src="https://map.ukrainealarm.com/"
-          title={t('live.frame')}
-          loading="lazy"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allow="fullscreen"
-        />
-      </section>
+      <div className="change-ticker" aria-label={t('ticker.eyebrow')} title={t('ticker.hint')}>
+        <span className="eyebrow">{t('ticker.eyebrow')}</span>
+        {recentEvents.length ? (
+          <ul>
+            {recentEvents.map((event) => (
+              <li key={event.id}>
+                <button type="button" onClick={() => {
+                  const regionId = getAlertRegionId(event.alert)
+                  if (regionId) focusRegion(regionId)
+                }}>
+                  <i className={event.action === 'new' ? 'event-new' : 'event-ended'} />
+                  <span className="ticker-time">{formatClock(lang, event.at)}</span>
+                  <span className="ticker-place">{displayAlertLocation(event.alert)}</span>
+                  <span className="ticker-type">{alertTypeLabel(lang, event.alert.type)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <span className="ticker-empty">{t('panel.logEmpty')}</span>}
+      </div>
 
-      <div className={`workspace${usingOfficialLive ? ' is-hidden' : ''}`} id="top">
+      <div className="workspace" id="top">
         <section className="map-section" aria-labelledby="map-heading">
           <div className="section-heading">
             <div>
@@ -834,6 +990,10 @@ function App() {
             <div><span>{t('map.red')}</span><strong>{wholeRedCount.toString().padStart(2, '0')}</strong></div>
             <div className="metric-yellow"><span>{t('map.yellow')}</span><strong>{wholeYellowCount.toString().padStart(2, '0')}</strong></div>
             <div className="metric-partial" title={t('map.partialHint')}><span>{t('map.partial')}</span><strong>{partialRegionCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-spark" title={t('spark.hint')}>
+              <span>{t('spark.label')}</span>
+              <HourlySparkline samples={hourlySamples} lang={lang} />
+            </div>
           </div>
 
           <div className="type-filter" role="group" aria-label={t('filter.typeAria')}>
@@ -849,6 +1009,7 @@ function App() {
             labels={regionLabels}
             selectedId={selectedId}
             focusRequest={focusRequest}
+            pulse={pulse}
             onSelect={setSelectedId}
             onFocusRegion={focusRegion}
             viewBox={ukraineMap.viewBox}
@@ -860,6 +1021,9 @@ function App() {
             <span><i className="legend-dot legend-partial" />{t('legend.partial')}</span>
             <span><i className="legend-dot legend-nominal" />{t('legend.nominal')}</span>
             <span><i className="legend-dot legend-clear" />{t('legend.clear')}</span>
+            {pulse.items.length > 0 && (
+              <span><i className="legend-dot legend-pulse" />{t('legend.pulse')}</span>
+            )}
             {(connection === 'loading' || (connection === 'error' && !updatedAt)) && (
               <span><i className="legend-dot legend-unknown" />{connection === 'loading' ? t('legend.loading') : t('legend.noData')}</span>
             )}

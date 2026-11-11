@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useI18n } from './i18n-context'
 import { cachedBand } from './outline-band'
-import type { AlertState, ThreatLevel } from './map-types'
+import type { AlertState, Pulse, ThreatLevel } from './map-types'
 
 type MapRegion = { id: string; title: string; path: string }
 type Outline = { id: string; halo: string | null; line: string | null; select: string | null }
@@ -15,6 +15,7 @@ type Props = {
   labels: Record<string, string>
   selectedId: string | null
   focusRequest: { regionId: string; token: number } | null
+  pulse: Pulse
   onSelect: (regionId: string | null) => void
   onFocusRegion: (regionId: string) => void
   viewBox: string
@@ -33,6 +34,7 @@ const FOCUS_DURATION = 420
 const HALO_WIDTH = 5
 const LINE_WIDTH = 2.6
 const SELECT_WIDTH = 3.2
+const PULSE_WIDTH = 7
 const BAND_SCALE_STEPS = 100
 
 function parseViewBox(viewBox: string): Viewport {
@@ -76,6 +78,7 @@ export default function UkraineMap({
   labels,
   selectedId,
   focusRequest,
+  pulse,
   onSelect,
   onFocusRegion,
   viewBox,
@@ -124,6 +127,18 @@ export default function UkraineMap({
     }
     return items
   }, [hoveredRegion, selectedRegion, viewport.width, base.width])
+
+  // Кільце-імпульс — та сама стрічка, що й контур, анімується лише прозорість.
+  // Геометрія перераховується лише на зміну списку імпульсів, а не на кожен кадр.
+  const pulseRings = useMemo(() => {
+    const scale = Math.round((viewport.width / base.width) * BAND_SCALE_STEPS) / BAND_SCALE_STEPS
+    return pulse.items.flatMap((item) => {
+      const region = regions.find((candidate) => candidate.id === item.regionId)
+      if (!region) return []
+      const band = cachedBand(region.id, region.path, PULSE_WIDTH * scale)
+      return band ? [{ ...item, band }] : []
+    })
+  }, [pulse, regions, viewport.width, base.width])
 
   const applyViewport = useCallback((next: Viewport) => {
     viewportRef.current = next
@@ -345,6 +360,15 @@ export default function UkraineMap({
             </path>
           )
         })}
+
+        {pulseRings.map((ring) => (
+          <path
+            key={`${ring.regionId}-${pulse.token}`}
+            className={`region-pulse state-${statuses[ring.regionId] ?? 'unknown'} level-${ring.level}`}
+            d={ring.band}
+            aria-hidden="true"
+          />
+        ))}
 
         {outlines.map((outline) => (
           <g key={outline.id} className="region-outline-layer" aria-hidden="true">

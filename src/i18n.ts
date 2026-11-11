@@ -35,7 +35,6 @@ const messages = {
     pl: 'Język interfejsu',
   },
 
-  'conn.official': { uk: 'ОФІЦІЙНИЙ PUSH', en: 'OFFICIAL PUSH', pl: 'OFICJALNY PUSH' },
   'conn.polling': { uk: 'ДАНІ ОНОВЛЮЮТЬСЯ', en: 'DATA REFRESHING', pl: 'DANE ODŚWIEŻANE' },
   'conn.stale': { uk: 'ДАНІ ЗАСТАРІЛІ', en: 'DATA OUTDATED', pl: 'DANE NIEAKTUALNE' },
   'conn.offline': { uk: 'НЕМАЄ ЗВ’ЯЗКУ', en: 'NO CONNECTION', pl: 'BRAK POŁĄCZENIA' },
@@ -44,16 +43,20 @@ const messages = {
   'banner.red': { uk: 'ЧЕРВОНИЙ РІВЕНЬ ЗАГРОЗИ', en: 'RED THREAT LEVEL', pl: 'CZERWONY POZIOM ZAGROŻENIA' },
   'banner.yellow': { uk: 'ЖОВТИЙ РІВЕНЬ ЗАГРОЗИ', en: 'YELLOW THREAT LEVEL', pl: 'ŻÓŁTY POZIOM ZAGROŻENIA' },
   'banner.country': { uk: 'СТАН ПО ВСІЙ КРАЇНІ', en: 'COUNTRY-WIDE STATUS', pl: 'SYTUACJA W CAŁYM KRAJU' },
-  'banner.received': { uk: 'ОТРИМАНО {time}', en: 'RECEIVED {time}', pl: 'OTRZYMANO {time}' },
   'banner.waiting': { uk: 'очікування даних', en: 'waiting for data', pl: 'oczekiwanie na dane' },
-  'banner.stream': { uk: 'ПОТІК ВІД ДЖЕРЕЛА', en: 'STREAMING FROM SOURCE', pl: 'STRUMIEŃ ZE ŹRÓDŁA' },
+  'sync.received': {
+    uk: 'ОТРИМАНО {time} · {age} тому',
+    en: 'RECEIVED {time} · {age} ago',
+    pl: 'OTRZYMANO {time} · {age} temu',
+  },
+  'sync.next': { uk: 'через {seconds} с', en: 'in {seconds}s', pl: 'za {seconds}s' },
+  'sync.nextHint': {
+    uk: 'Наступна перевірка знімка. Саме джерело встигає оновити дані не частіше ніж раз на хвилину.',
+    en: 'Next snapshot check. The source itself can update no more than once a minute.',
+    pl: 'Następne sprawdzenie migawki. Samo źródło aktualizuje się nie częściej niż raz na minutę.',
+  },
   'banner.refresh': { uk: 'Оновити дані', en: 'Refresh data', pl: 'Odśwież dane' },
 
-  'headline.official': {
-    uk: 'Офіційна карта працює в режимі наживо',
-    en: 'The official map is running live',
-    pl: 'Oficjalna mapa działa na żywo',
-  },
   'headline.syncing': {
     uk: 'Синхронізуємо поточний стан',
     en: 'Syncing the current status',
@@ -102,32 +105,45 @@ const messages = {
 
   'mode.aria': { uk: 'Режим оновлення карти', en: 'Map update mode', pl: 'Tryb aktualizacji mapy' },
   'mode.eyebrow': { uk: 'РЕЖИМ ОНОВЛЕННЯ', en: 'UPDATE MODE', pl: 'TRYB AKTUALIZACJI' },
-  'mode.official': {
-    uk: 'Офіційна мапа з push-оновленнями',
-    en: 'Official map with push updates',
-    pl: 'Oficjalna mapa z aktualizacjami push',
-  },
   'mode.polling': {
-    uk: 'Оновлення через наш backend раз на хвилину',
-    en: 'Refreshing through our backend every minute',
-    pl: 'Odświeżanie przez nasz backend co minutę',
+    uk: 'Наша мапа: знімок джерела щохвилини',
+    en: 'Our map: source snapshot every minute',
+    pl: 'Nasza mapa: migawka źródła co minutę',
   },
   'mode.snapshot': {
-    uk: 'Оновлення зі знямка офіційного джерела',
-    en: 'Refreshing from the official source snapshot',
-    pl: 'Odświeżanie z migawki oficjalnego źródła',
+    uk: 'Наша мапа: хвилинні знімки офіційного джерела',
+    en: 'Our map: one-minute snapshots from the official source',
+    pl: 'Nasza mapa: minutowe migawki oficjalnego źródła',
   },
   'mode.poll': { uk: 'Автооновлення', en: 'Auto-update', pl: 'Automatycznie' },
   'mode.live': { uk: 'Наживо', en: 'Live', pl: 'Na żywo' },
   'mode.pollingHint': {
-    uk: 'Перевіряти дані щохвилини: backend раз на хвилину, знімок джерела — раз на 5 хвилин',
-    en: 'Check the data every minute: the backend serves one-minute slices, the source snapshot five-minute ones',
-    pl: 'Sprawdzaj dane co minutę: backend daje dane co minutę, migawka źródła co 5 minut',
+    uk: 'Перевіряти знімок кожні 20 секунд: джерело видає не більше одного оновлення на хвилину',
+    en: 'Check the snapshot every 20 seconds: the source publishes at most one update a minute',
+    pl: 'Sprawdzaj migawkę co 20 sekund: źródło publikuje najwyżej jedną aktualizację na minutę',
   },
   'mode.liveHint': {
-    uk: 'Показати офіційну мапу з live-підпискою',
-    en: 'Show the official map with a live subscription',
-    pl: 'Pokaż oficjalną mapę z subskrypcją na żywo',
+    uk: 'Перевіряти знімок кожні 5 секунд, щоб мапа реагувала в перші ж секунди після публікації',
+    en: 'Check the snapshot every 5 seconds so the map reacts within seconds of a publication',
+    pl: 'Sprawdzaj migawkę co 5 sekund, aby mapa reagowała w ciągu sekund po publikacji',
+  },
+  'ticker.eyebrow': { uk: 'СТРІЧКА ЗМІН', en: 'CHANGE TICKER', pl: 'TAŚMIA ZMIAN' },
+  'ticker.hint': {
+    uk: 'Останні зміни на мапі. Натисніть рядок, щоб наблизити область.',
+    en: 'Latest changes on the map. Select a row to zoom to that region.',
+    pl: 'Ostatnie zmiany na mapie. Kliknij wiersz, aby przybliżyć obwód.',
+  },
+  'legend.pulse': { uk: 'Щойно змінилось', en: 'Just changed', pl: 'Właśnie się zmieniło' },
+  'spark.label': { uk: 'ГОДИНА', en: 'HOUR', pl: 'GODZINA' },
+  'spark.aria': {
+    uk: 'Активні області за останню годину',
+    en: 'Active regions over the last hour',
+    pl: 'Aktywne obwody w ciągu ostatniej godziny',
+  },
+  'spark.hint': {
+    uk: 'Області з тривогою щохвилини за останню годину; червоним — червоний рівень загрози',
+    en: 'Oblasts with an alert each minute over the last hour; red bars are red-level threats',
+    pl: 'Obwody z alarmem w każdej minucie ostatniej godziny; czerwone słupki to czerwony poziom',
   },
   'stale.withData': {
     uk: 'Показано останні отримані дані станом на {time}.',
@@ -145,24 +161,6 @@ const messages = {
     pl: 'Sprawdź połączenie i spróbuj odświeżyć dane.',
   },
   'stale.retry': { uk: 'Повторити', en: 'Retry', pl: 'Spróbuj ponownie' },
-
-  'live.aria': { uk: 'Офіційна мапа наживо', en: 'Official live map', pl: 'Oficjalna mapa na żywo' },
-  'live.eyebrow': {
-    uk: 'ПРЯМА ПІДПИСКА ДЖЕРЕЛА',
-    en: 'DIRECT SOURCE SUBSCRIPTION',
-    pl: 'BEZPOŚREDNIA SUBSKRYPCJA ŹRÓDŁA',
-  },
-  'live.title': {
-    uk: 'Офіційна карта повітряних тривог',
-    en: 'Official air alert map',
-    pl: 'Oficjalna mapa alarmów powietrznych',
-  },
-  'live.open': { uk: 'Відкрити окремо', en: 'Open separately', pl: 'Otwórz osobno' },
-  'live.frame': {
-    uk: 'Офіційна карта повітряних тривог України наживо',
-    en: 'Official air alert map of Ukraine, live',
-    pl: 'Oficjalna mapa alarmów powietrznych Ukrainy na żywo',
-  },
 
   'map.eyebrow': {
     uk: 'МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ',
@@ -556,10 +554,20 @@ export function formatClock(lang: Language, iso: string) {
   }).format(date)
 }
 
-const durationUnits: Record<Language, { day: string; hour: string; minute: string }> = {
-  uk: { day: 'д', hour: 'год', minute: 'хв' },
-  en: { day: 'd', hour: 'h', minute: 'min' },
-  pl: { day: 'd', hour: 'godz.', minute: 'min' },
+const durationUnits: Record<Language, { day: string; hour: string; minute: string; second: string }> = {
+  uk: { day: 'д', hour: 'год', minute: 'хв', second: 'с' },
+  en: { day: 'd', hour: 'h', minute: 'min', second: 's' },
+  pl: { day: 'd', hour: 'godz.', minute: 'min', second: 's' },
+}
+
+// Свіжість знімка показуємо скороченими одиницями: вони не відмінюються і ліпляться в один рядок.
+export function formatAge(lang: Language, seconds: number) {
+  const units = durationUnits[lang]
+  const total = Math.max(0, Math.floor(seconds))
+  if (total < 60) return `${total} ${units.second}`
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return `${minutes} ${units.minute}`
+  return `${Math.floor(minutes / 60)} ${units.hour}`
 }
 
 export function formatDuration(lang: Language, iso: string) {

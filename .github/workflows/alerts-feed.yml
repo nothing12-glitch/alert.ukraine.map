@@ -1,20 +1,25 @@
 name: Publish alerts feed
 
 on:
+  # Наглядач: перезапускає безперервний цикл, якщо ланцюжок зупинився.
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: alerts-feed
   cancel-in-progress: false
 
 jobs:
-  publish:
+  loop:
     runs-on: ubuntu-latest
+    # Один запит на хвилину — це стеля ліміту ключа, тому цикл читає джерело сам
+    # і просто передає естафету наступному запуску перед власним дедлайном.
+    timeout-minutes: 320
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,22 +29,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build the feed snapshot
-        run: node scripts/publish-ukraine-alarm-feed.mjs
+      - name: Publish per-minute snapshots
+        run: node scripts/publish-feed-loop.mjs
         env:
           UKRAINE_ALARM_TOKEN: ${{ secrets.UKRAINE_ALARM_TOKEN }}
-
-      - name: Publish the feed branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git checkout --orphan feed
-          git rm --cached --quiet -r .
-          cp .feed/alerts.json alerts.json
-          git add alerts.json
-          git \
-            -c user.name=github-actions[bot] \
-            -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
-            commit --quiet --allow-empty -m "Update alerts feed snapshot"
-          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" feed
-          echo "Published alerts.json to the feed branch."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
