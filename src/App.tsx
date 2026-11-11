@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   ArrowUpRight,
@@ -561,6 +561,10 @@ function App() {
   const selectedRaions = selectedRegion ? summaries[selectedRegion.id]?.raions ?? [] : []
   const sourceUrl = feedSource === 'neptun.in.ua' ? 'https://neptun.in.ua/' : 'https://alerts.in.ua/'
   const displayTitle = useCallback((region: Region) => regionTitle(lang, region.id, region.title), [lang])
+  const mapRegions = useMemo(
+    () => regions.map((region) => ({ ...region, title: regionTitle(lang, region.id, region.title) })),
+    [lang],
+  )
   const displayAlertLocation = useCallback((alert: OfficialAlert) => {
     const regionId = getAlertRegionId(alert)
     const region = regionId ? regions.find((item) => item.id === regionId) : undefined
@@ -870,7 +874,7 @@ function App() {
           </div>
 
           <UkraineMap
-            regions={regions.map((region) => ({ ...region, title: displayTitle(region) }))}
+            regions={mapRegions}
             statuses={statuses}
             levels={regionLevels}
             partialCounts={partialCounts}

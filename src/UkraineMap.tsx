@@ -110,9 +110,12 @@ export default function UkraineMap({
   const [badgePoints, setBadgePoints] = useState<Record<string, BadgePoint>>({})
   const stageRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const zoomLabelRef = useRef<HTMLSpanElement>(null)
   const viewportRef = useRef<Viewport>(base)
   const frameRef = useRef(0)
   const pathRefs = useRef<Record<string, SVGPathElement | null>>({})
+  const badgeRefs = useRef<Record<string, SVGGElement | null>>({})
+  const badgeScaleWidthRef = useRef(base.width)
   const drag = useRef<{ pointerId: number; startX: number; startY: number; viewport: Viewport; scale: number; moved: boolean } | null>(null)
   const suppressClick = useRef(false)
 
@@ -124,14 +127,30 @@ export default function UkraineMap({
 
   const applyViewport = useCallback((next: Viewport) => {
     viewportRef.current = next
+    const svg = svgRef.current
+    if (svg) svg.setAttribute('viewBox', `${next.x} ${next.y} ${next.width} ${next.height}`)
+    if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round((base.width / next.width) * 100)}%`
+    if (next.width === badgeScaleWidthRef.current) return
+    badgeScaleWidthRef.current = next.width
+    const scale = next.width / base.width
+    for (const [id, node] of Object.entries(badgeRefs.current)) {
+      const point = badgePoints[id]
+      if (node && point) node.setAttribute('transform', `translate(${point.x} ${point.y}) scale(${scale})`)
+    }
+  }, [base, badgePoints])
+
+  // React-стан оновлюється лише коли жест завершився: під час анімації патерн-штри-
+  // хування не перераховується, інакше кожен кадр примусово перефарбовує всю карту.
+  const commitViewport = useCallback((next: Viewport) => {
+    applyViewport(next)
     setViewport(next)
-  }, [])
+  }, [applyViewport])
 
   const animateTo = useCallback((target: Viewport, duration: number) => {
     window.cancelAnimationFrame(frameRef.current)
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      applyViewport(target)
+      commitViewport(target)
       return
     }
 
@@ -146,10 +165,15 @@ export default function UkraineMap({
         width: from.width + (target.width - from.width) * eased,
         height: from.height + (target.height - from.height) * eased,
       })
-      if (progress < 1) frameRef.current = window.requestAnimationFrame(step)
+      if (progress < 1) {
+        frameRef.current = window.requestAnimationFrame(step)
+      } else {
+        frameRef.current = 0
+        setViewport(viewportRef.current)
+      }
     }
     frameRef.current = window.requestAnimationFrame(step)
-  }, [applyViewport])
+  }, [applyViewport, commitViewport])
 
   useEffect(() => () => window.cancelAnimationFrame(frameRef.current), [])
 
@@ -227,6 +251,8 @@ export default function UkraineMap({
     if (event.button !== 0) return
     if ((event.target as Element).closest('.map-controls')) return
     window.cancelAnimationFrame(frameRef.current)
+    frameRef.current = 0
+    commitViewport(viewportRef.current)
     const scale = svgRef.current?.getScreenCTM()?.a ?? 1
     drag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, viewport: viewportRef.current, scale, moved: false }
     suppressClick.current = false
@@ -250,7 +276,10 @@ export default function UkraineMap({
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return
-    if (drag.current.moved) suppressClick.current = true
+    if (drag.current.moved) {
+      suppressClick.current = true
+      setViewport(viewportRef.current)
+    }
     drag.current = null
     setIsPanning(false)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
@@ -340,6 +369,9 @@ export default function UkraineMap({
             return (
               <g
                 key={region.id}
+                ref={(node) => {
+                  badgeRefs.current[region.id] = node
+                }}
                 className={`region-badge level-${levels[region.id] ?? 'red'}`}
                 transform={`translate(${point.x} ${point.y}) scale(${badgeScale})`}
               >
@@ -386,7 +418,7 @@ export default function UkraineMap({
         >
           <RotateCcw size={15} />
         </button>
-        <span className="map-zoom-level">{zoomPercent}%</span>
+        <span className="map-zoom-level" ref={zoomLabelRef}>{zoomPercent}%</span>
       </div>
 
       <div className="map-stamp"><span>UA</span><span>48° 23′ N<br />31° 10′ E</span></div>

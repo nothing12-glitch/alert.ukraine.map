@@ -445,9 +445,10 @@
 .map-stage {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 460px;
-  height: min(62vh, 610px);
-  place-items: center;
+  height: min(70vh, 640px);
   overflow: hidden;
   border: 1px solid #d6e0d9;
   user-select: none;
@@ -471,10 +472,8 @@
 
 .ukraine-map {
   display: block;
-  width: min(100% - 32px, 860px);
+  width: 100%;
   height: 100%;
-  max-height: 600px;
-  overflow: visible;
 }
 
 .region-shape {
@@ -1370,9 +1369,9 @@
 }
 
 .app-footer span {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   font-family: var(--mono);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .app-footer a {
@@ -1813,7 +1812,6 @@
   .type-filter button { flex: 1; }
   .metric-strip div { padding-inline: 8px; }
   .map-stage { height: min(70vw, 480px); min-height: 290px; }
-  .ukraine-map { width: min(100% - 18px, 650px); }
   .region-panel { padding-top: 0; }
   .region-list { display: grid; max-height: 370px; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
   .row-status { display: inline; }
