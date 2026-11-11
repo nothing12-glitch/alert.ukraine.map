@@ -701,6 +701,7 @@ function App() {
   const raionAlertCount = typeFilteredAlerts.filter((alert) => getAlertScope(alert) === 'raion').length
   const activeCount = regions.filter((region) => statuses[region.id] === 'active' || statuses[region.id] === 'partial').length
   const redCount = Object.values(regionLevels).filter((level) => level === 'red').length
+  const yellowCount = Object.values(regionLevels).filter((level) => level === 'yellow').length
   const partialRegionCount = Object.keys(partialCounts).length
   const airAlertCount = typeFilteredAlerts.filter(isAirAlert).length
   const otherThreatCount = typeFilteredAlerts.length - airAlertCount
@@ -742,17 +743,15 @@ function App() {
   const recentEvents = activityHistory.slice(0, tickerLimit)
 
   const showThreatBanner = feedReady && activeCount > 0
-  const wholeRedCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'red').length
-  const wholeYellowCount = regions.filter((region) => summaries[region.id]?.wholeLevel === 'yellow').length
   const headline = connection === 'loading'
     ? t('headline.syncing')
     : connection === 'error'
       ? updatedAt ? t('headline.noConnection') : t('headline.fetchFailed')
       : activeCount > 0
-        ? wholeRedCount
-          ? t('headline.red', { count: wholeRedCount, regions: regionWord(lang, wholeRedCount, 'locative') })
-          : wholeYellowCount
-            ? t('headline.yellow', { count: wholeYellowCount, regions: regionWord(lang, wholeYellowCount, 'locative') })
+        ? redCount
+          ? t('headline.red', { count: redCount, regions: regionWord(lang, redCount, 'locative') })
+          : yellowCount
+            ? t('headline.yellow', { count: yellowCount, regions: regionWord(lang, yellowCount, 'locative') })
             : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
         : t('headline.none')
 
@@ -1001,8 +1000,8 @@ function App() {
 
           <div className="metric-strip" aria-label={t('map.statsAria')}>
             <div><span>{t('map.current')}</span><strong>{activeCount.toString().padStart(2, '0')}</strong></div>
-            <div><span>{t('map.red')}</span><strong>{wholeRedCount.toString().padStart(2, '0')}</strong></div>
-            <div className="metric-yellow"><span>{t('map.yellow')}</span><strong>{wholeYellowCount.toString().padStart(2, '0')}</strong></div>
+            <div title={t('map.redHint')}><span>{t('map.red')}</span><strong>{redCount.toString().padStart(2, '0')}</strong></div>
+            <div className="metric-yellow" title={t('map.yellowHint')}><span>{t('map.yellow')}</span><strong>{yellowCount.toString().padStart(2, '0')}</strong></div>
             <div className="metric-partial" title={t('map.partialHint')}><span>{t('map.partial')}</span><strong>{partialRegionCount.toString().padStart(2, '0')}</strong></div>
             <div className="metric-spark" title={t('spark.hint')}>
               <span>{t('spark.label')}</span>

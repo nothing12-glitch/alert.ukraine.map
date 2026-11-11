@@ -208,6 +208,16 @@ const messages = {
   'map.red': { uk: 'ЧЕРВОНИХ', en: 'RED', pl: 'CZERWONE' },
   'map.yellow': { uk: 'ЖОВТИХ', en: 'YELLOW', pl: 'ŻÓŁTE' },
   'map.partial': { uk: 'ЧАСТКОВИХ', en: 'PARTIAL', pl: 'CZĘŚCIOWE' },
+  'map.redHint': {
+    uk: 'Області з червоним рівнем загрози — всією областю або в окремих районах',
+    en: 'Regions with a red threat level — oblast-wide or in some districts',
+    pl: 'Obwody z czerwonym poziomem zagrożenia — w całym obwodzie lub w części rejonów',
+  },
+  'map.yellowHint': {
+    uk: 'Області з жовтим рівнем загрози — всією областю або в окремих районах',
+    en: 'Regions with a yellow threat level — oblast-wide or in some districts',
+    pl: 'Obwody z żółtym poziomem zagrożenia — w całym obwodzie lub w części rejonów',
+  },
   'map.partialHint': {
     uk: 'Області, де тривога охоплює лише окремі райони',
     en: 'Regions where the alert covers only some districts',
