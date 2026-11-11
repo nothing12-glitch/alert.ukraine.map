@@ -493,10 +493,6 @@
   stroke: var(--map-hatch);
 }
 
-.region-shape.state-nominal {
-  fill: var(--map-nominal);
-}
-
 .region-shape.state-unknown {
   fill: var(--map-unknown);
 }
@@ -654,12 +650,6 @@
 .selected-indicator.state-active,
 .selected-indicator.state-partial {
   background: var(--region-color, var(--map-active));
-}
-
-.legend-nominal,
-.row-marker.state-nominal,
-.selected-indicator.state-nominal {
-  background: var(--map-nominal);
 }
 
 .legend-partial,
@@ -884,10 +874,6 @@
 
 .status-label-partial.level-yellow {
   color: #8a6410;
-}
-
-.status-label-nominal {
-  color: #68756e;
 }
 
 .status-label-clear {
@@ -1267,33 +1253,7 @@
   line-height: 1.4;
 }
 
-.feed-summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  color: #68756e;
-}
-
-.feed-summary > span {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid #c5d0c9;
-  color: #65756c;
-  font-family: var(--mono);
-  font-size: 10px;
-}
-
-.feed-summary p {
-  margin: 0;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
 .source-link {
-  margin-top: 14px;
   color: var(--teal);
   font-size: 11px;
   font-weight: 650;
@@ -1545,7 +1505,6 @@
 :root[data-theme='dark'] .map-stamp,
 :root[data-theme='dark'] .map-caveat,
 :root[data-theme='dark'] .map-legend span,
-:root[data-theme='dark'] .feed-summary,
 :root[data-theme='dark'] .app-footer {
   color: #9cb0a6;
 }
@@ -1575,7 +1534,6 @@
 }
 
 :root[data-theme='dark'] .row-status,
-:root[data-theme='dark'] .status-label-nominal,
 :root[data-theme='dark'] .status-label-clear {
   color: #93a69d;
 }
@@ -1685,11 +1643,6 @@
 :root[data-theme='dark'] .activity-event span,
 :root[data-theme='dark'] .activity-event time {
   color: #93a69d;
-}
-
-:root[data-theme='dark'] .feed-summary > span {
-  border-color: var(--line);
-  color: #9cb0a6;
 }
 
 :root[data-theme='dark'] .app-footer {

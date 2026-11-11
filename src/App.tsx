@@ -158,7 +158,6 @@ const regions: Region[] = (ukraineMap.locations as SvgLocation[]).map((location)
 const statusKeys: Record<AlertState, MessageKey> = {
   active: 'status.active',
   partial: 'status.partial',
-  nominal: 'status.nominal',
   clear: 'status.clear',
   unknown: 'status.unknown',
 }
@@ -193,9 +192,8 @@ const kindPriority: Record<ThreatKind, number> = {
 const statusOrder: Record<AlertState, number> = {
   active: 0,
   partial: 1,
-  nominal: 2,
-  clear: 3,
-  unknown: 4,
+  clear: 2,
+  unknown: 3,
 }
 
 const CLEARED_NOTICE_MS = 5 * 60_000
@@ -230,7 +228,6 @@ type RegionSummary = {
   partialLevel?: ThreatLevel
   wholeThreat?: Threat
   partialThreat?: Threat
-  nominal: boolean
   raions: OfficialAlert[]
 }
 
@@ -253,15 +250,13 @@ function summarizeRegions(alerts: OfficialAlert[]) {
     const regionId = getAlertRegionId(alert)
     if (!regionId) continue
 
-    const summary = (summaries[regionId] ??= { nominal: false, raions: [] })
+    const summary = (summaries[regionId] ??= { raions: [] })
     const level = getAlertLevel(alert)
 
     if (getAlertScope(alert) === 'raion') {
       summary.partialLevel = worstLevel(summary.partialLevel, level)
       summary.partialThreat = worstThreat(summary.partialThreat, alert)
       summary.raions.push(alert)
-    } else if (isStandingOccupiedAlert(alert)) {
-      summary.nominal = true
     } else {
       summary.wholeLevel = worstLevel(summary.wholeLevel, level)
       summary.wholeThreat = worstThreat(summary.wholeThreat, alert)
@@ -292,16 +287,6 @@ function appendHourlySample(samples: HourlySample[], sample: HourlySample) {
 
 function getAlertKey(alert: OfficialAlert) {
   return `${normalizeLocation(alert.location)}|${normalizeLocation(alert.type)}|${normalizeLocation(alert.alertLevel ?? '')}`
-}
-
-function isStandingOccupiedAlert(alert: OfficialAlert) {
-  const location = normalizeLocation(alert.region || alert.location)
-  const isOccupiedArea = location === normalizeLocation('Луганська область')
-    || location === normalizeLocation('Автономна Республіка Крим')
-  const startedAt = new Date(alert.startedAtIso).getTime()
-  const durationHours = Number.isFinite(startedAt) ? (Date.now() - startedAt) / 3_600_000 : 0
-  // Жива тривога рідко тримається довше кількох годин; уся довшана позначка — це статус окупації.
-  return isOccupiedArea && durationHours >= 6
 }
 
 function isAirAlert(alert: OfficialAlert) {
@@ -596,13 +581,12 @@ function App() {
       }
 
       const { favoritesOnly, sound, favorites: favoriteIds, lang: notificationLang } = notifySettings.current
-      const threats = newAlerts.filter((alert) => !isStandingOccupiedAlert(alert))
       const scopedThreats = favoritesOnly
-        ? threats.filter((alert) => {
+        ? newAlerts.filter((alert) => {
             const regionId = getAlertRegionId(alert)
             return regionId !== undefined && favoriteIds.includes(regionId)
           })
-        : threats
+        : newAlerts
 
       if (scopedThreats.length) notifyAboutThreats(scopedThreats, sound, notificationsEnabled, notificationLang)
     }
@@ -670,9 +654,7 @@ function App() {
         ? 'active'
         : summary?.partialLevel
           ? 'partial'
-          : summary?.nominal
-            ? 'nominal'
-            : 'clear'
+          : 'clear'
       return [region.id, state]
     }),
   ) as Record<string, AlertState>
@@ -774,7 +756,6 @@ function App() {
       return [region.id, label]
     }),
   ) as Record<string, string>
-  const standingAlertCount = typeFilteredAlerts.filter(isStandingOccupiedAlert).length
   const raionAlertCount = typeFilteredAlerts.filter((alert) => getAlertScope(alert) === 'raion').length
   const activeCount = regions.filter((region) => statuses[region.id] === 'active' || statuses[region.id] === 'partial').length
   const redCount = Object.values(regionLevels).filter((level) => level === 'red').length
@@ -1113,7 +1094,6 @@ function App() {
               <span key={kind}><i className={`legend-dot legend-kind-${kind}`} />{t(kindKeys[kind])}</span>
             ))}
             <span><i className="legend-dot legend-partial" />{t('legend.partial')}</span>
-            <span><i className="legend-dot legend-nominal" />{t('legend.nominal')}</span>
             <span><i className="legend-dot legend-clear" />{t('legend.clear')}</span>
             <span className="legend-note">{t('legend.intensity')}</span>
             {pulse.items.length > 0 && (
@@ -1132,7 +1112,6 @@ function App() {
                 <span>{regionLabels[selectedRegion.id]}</span>
                 {selectedAlerts.slice(0, 5).map((alert) => (
                   <span key={`${alert.location}-${alert.type}`} className="selected-alert-type">
-                    {isStandingOccupiedAlert(alert) ? t('selected.markerPrefix') : ''}
                     {displayAlertLocation(alert)} · {alertTypeLabel(lang, alert.type)} · {translate(lang, getAlertLevel(alert) === 'yellow' ? 'levelWord.yellow' : 'levelWord.red')} {t('level.word')} · {formatDateTime(lang, alert.startedAtIso)} · {formatDuration(lang, alert.startedAtIso)}
                   </span>
                 ))}
@@ -1294,7 +1273,6 @@ function App() {
           </div>
 
           <div className="region-panel-footer">
-            <div className="feed-summary"><span>{standingAlertCount}</span><p>{t('panel.standing', { count: standingAlertCount })}</p></div>
             <a href={sourceUrl} target="_blank" rel="noreferrer" className="source-link">
               <Wifi size={14} /> {t('panel.source', { source: feedSource || 'api.ukrainealarm.com' })} <ArrowUpRight size={13} />
             </a>

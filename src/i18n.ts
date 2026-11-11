@@ -239,7 +239,6 @@ const messages = {
   'filter.other': { uk: 'Інші', en: 'Other', pl: 'Inne' },
 
   'legend.aria': { uk: 'Умовні позначення', en: 'Legend', pl: 'Legenda' },
-  'legend.nominal': { uk: 'Тривала позначка', en: 'Administrative marker', pl: 'Oznaczenie administracyjne' },
   'legend.partial': { uk: 'Часткова (окремі райони)', en: 'Partial (some districts)', pl: 'Częściowy (część rejonów)' },
   'legend.clear': { uk: 'Не вказано джерелом', en: 'Not reported by source', pl: 'Nie wskazano w źródle' },
   'legend.loading': { uk: 'Завантаження', en: 'Loading', pl: 'Ładowanie' },
@@ -260,11 +259,6 @@ const messages = {
     uk: 'і ще {count} у цій області',
     en: 'and {count} more in this region',
     pl: 'i jeszcze {count} w tym obwodzie',
-  },
-  'selected.markerPrefix': {
-    uk: 'Тривала позначка · ',
-    en: 'Administrative marker · ',
-    pl: 'Oznaczenie administracyjne · ',
   },
   'selected.addFav': { uk: 'Додати до обраного', en: 'Add to favorites', pl: 'Dodaj do ulubionych' },
   'selected.removeFav': { uk: 'Вилучити з обраного', en: 'Remove from favorites', pl: 'Usuń z ulubionych' },
@@ -322,11 +316,6 @@ const messages = {
     pl: 'Brak ulubionych obwodów, więc nie będzie powiadomień. Wybierz obwód na mapie i oznacz go gwiazdką.',
   },
   'panel.empty': { uk: 'Область не знайдена', en: 'No region found', pl: 'Nie znaleziono obwodu' },
-  'panel.standing': {
-    uk: 'Тривалі адміністративні позначки на окупованих територіях ({count}) показуються окремо від поточних загроз',
-    en: 'Long-standing administrative markers in occupied territories ({count}) are shown separately from current threats',
-    pl: 'Długotrwałe oznaczenia administracyjne na okupowanych terytoriach ({count}) są pokazywane osobno od bieżących zagrożeń',
-  },
   'panel.source': { uk: 'Джерело: {source}', en: 'Source: {source}', pl: 'Źródło: {source}' },
   'panel.log': { uk: 'Журнал змін', en: 'Change log', pl: 'Dziennik zmian' },
   'panel.logNew': { uk: 'Нова загроза', en: 'New alert', pl: 'Nowy alarm' },
@@ -348,11 +337,6 @@ const messages = {
     uk: 'Часткова тривога (окремі райони)',
     en: 'Partial alert (some districts)',
     pl: 'Częściowy alarm (część rejonów)',
-  },
-  'status.nominal': {
-    uk: 'Тривала адміністративна позначка',
-    en: 'Long-standing administrative marker',
-    pl: 'Długotrwałe oznaczenie administracyjne',
   },
   'status.clear': { uk: 'У джерелі не зазначено', en: 'Not reported by source', pl: 'Nie wskazano w źródle' },
   'status.cleared': {
