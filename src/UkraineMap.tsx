@@ -10,7 +10,6 @@ type Props = {
   regions: MapRegion[]
   statuses: Record<string, AlertState>
   levels: Record<string, ThreatLevel>
-  partialCounts: Record<string, number>
   labels: Record<string, string>
   selectedId: string | null
   focusRequest: { regionId: string; token: number } | null
@@ -64,7 +63,6 @@ export default function UkraineMap({
   regions,
   statuses,
   levels,
-  partialCounts,
   labels,
   selectedId,
   focusRequest,
@@ -275,10 +273,7 @@ export default function UkraineMap({
           const level = levels[region.id]
           const label = labels[region.id] ?? ''
           const isSelected = selectedId === region.id
-          const districtCount = partialCounts[region.id] ?? 0
-          const ariaLabel = state === 'partial' && districtCount
-            ? `${region.title}: ${t('map.regionPartial', { label, count: districtCount })}`
-            : `${region.title}: ${label}`
+          const ariaLabel = `${region.title}: ${label}`
 
           return (
             <path

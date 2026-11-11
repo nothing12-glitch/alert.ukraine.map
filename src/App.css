@@ -481,7 +481,7 @@
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
-  transition: fill 180ms ease, stroke 180ms ease, filter 180ms ease;
+  transition: fill 180ms ease, stroke 180ms ease;
 }
 
 .region-shape:hover,
@@ -490,7 +490,6 @@
   stroke: #37594b;
   stroke-width: 2.8px;
   outline: none;
-  filter: brightness(1.04);
 }
 
 .region-shape.state-active {
@@ -525,13 +524,14 @@
 
 .region-shape.state-partial:hover,
 .region-shape.state-partial:focus-visible {
+  fill: url(#partial-hatch-red);
   stroke: #76281f;
   stroke-width: 2.8px;
-  filter: brightness(1.05);
 }
 
 .region-shape.state-partial.level-yellow:hover,
 .region-shape.state-partial.level-yellow:focus-visible {
+  fill: url(#partial-hatch-yellow);
   stroke: #6d4f0d;
 }
 
@@ -595,8 +595,7 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid #aebdb4;
-  background: #f4f9f5e6;
-  backdrop-filter: blur(3px);
+  background: #f4f9f5;
   cursor: default;
 }
 
@@ -1537,6 +1536,11 @@
   stroke: #8fc3ab;
 }
 
+/* Без цього правила темна обводка вибраної області зникає на темному фоні. */
+:root[data-theme='dark'] .region-shape.is-selected {
+  stroke: #eef9f2;
+}
+
 :root[data-theme='dark'] .region-shape.state-active:hover,
 :root[data-theme='dark'] .region-shape.state-active:focus-visible {
   fill: #ec6b52;
@@ -1551,6 +1555,18 @@
 
 :root[data-theme='dark'] .region-shape.state-partial {
   stroke: #a4523f;
+}
+
+:root[data-theme='dark'] .region-shape.state-partial:hover,
+:root[data-theme='dark'] .region-shape.state-partial:focus-visible {
+  fill: url(#partial-hatch-red);
+  stroke: #ffd4c8;
+}
+
+:root[data-theme='dark'] .region-shape.state-partial.level-yellow:hover,
+:root[data-theme='dark'] .region-shape.state-partial.level-yellow:focus-visible {
+  fill: url(#partial-hatch-yellow);
+  stroke: #ffe6a8;
 }
 
 :root[data-theme='dark'] .region-shape.state-partial.level-yellow {
@@ -1583,7 +1599,7 @@
 
 :root[data-theme='dark'] .map-controls {
   border-color: #3c574c;
-  background: #16251fe6;
+  background: #16251f;
 }
 
 :root[data-theme='dark'] .map-controls button {

@@ -204,11 +204,6 @@ const messages = {
     en: 'Regions where the alert covers only some districts',
     pl: 'Obwody, w których alarm obejmuje tylko część rejonów',
   },
-  'map.regionPartial': {
-    uk: '{label} · районів: {count}',
-    en: '{label} · districts: {count}',
-    pl: '{label} · rejonów: {count}',
-  },
   'map.focusHint': {
     uk: 'Наблизити область (подвійний клік)',
     en: 'Zoom to region (double-click)',

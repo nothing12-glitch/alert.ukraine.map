@@ -846,7 +846,6 @@ function App() {
             regions={mapRegions}
             statuses={statuses}
             levels={regionLevels}
-            partialCounts={partialCounts}
             labels={regionLabels}
             selectedId={selectedId}
             focusRequest={focusRequest}
