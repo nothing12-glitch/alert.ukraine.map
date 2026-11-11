@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useI18n } from './i18n-context'
+import { cachedBand } from './outline-band'
 import type { AlertState, ThreatLevel } from './map-types'
 
 type MapRegion = { id: string; title: string; path: string }
+type Outline = { id: string; halo: string | null; line: string | null; select: string | null }
 type Viewport = { x: number; y: number; width: number; height: number }
 type Props = {
   regions: MapRegion[]
@@ -24,6 +26,14 @@ const WHEEL_DURATION = 180
 const BUTTON_DURATION = 240
 const RESET_DURATION = 280
 const FOCUS_DURATION = 420
+
+// Контури — це заповнені стрічки, а не штрих: Chrome на складних межах іноді
+// домальовує штрих лише частиною. Ширини ростуть від межі області назовні, тому
+// вони менші за колишні ширини штриха, що лежали по обидва боки від лінії.
+const HALO_WIDTH = 5
+const LINE_WIDTH = 2.6
+const SELECT_WIDTH = 3.2
+const BAND_SCALE_STEPS = 100
 
 function parseViewBox(viewBox: string): Viewport {
   const [x, y, width, height] = viewBox.trim().split(/[\s,]+/).map(Number)
@@ -89,6 +99,31 @@ export default function UkraineMap({
   const hatchScale = viewport.width / base.width
   const hatchTile = 12 * hatchScale
   const hoveredRegion = hoveredId ? regions.find((region) => region.id === hoveredId) : undefined
+  const selectedRegion = selectedId ? regions.find((region) => region.id === selectedId) : undefined
+
+  // Ширина стрічки в одиницях viewBox, щоб на екрані контур лишався однаково
+  // тонким за будь-якого зуму. Квантування (BAND_SCALE_STEPS) + завершений, а не
+  // анімований viewport: під час жесту стрічки не перераховуються, інакше кожен
+  // кадр блокував би карту.
+  const outlines = useMemo(() => {
+    const scale = Math.round((viewport.width / base.width) * BAND_SCALE_STEPS) / BAND_SCALE_STEPS
+    const items: Outline[] = []
+    const find = (region: MapRegion) => {
+      let item = items.find((candidate) => candidate.id === region.id)
+      if (!item) {
+        item = { id: region.id, halo: null, line: null, select: null }
+        items.push(item)
+      }
+      return item
+    }
+    if (selectedRegion) find(selectedRegion).select = cachedBand(selectedRegion.id, selectedRegion.path, SELECT_WIDTH * scale)
+    if (hoveredRegion) {
+      const item = find(hoveredRegion)
+      item.halo = cachedBand(hoveredRegion.id, hoveredRegion.path, HALO_WIDTH * scale)
+      item.line = cachedBand(hoveredRegion.id, hoveredRegion.path, LINE_WIDTH * scale)
+    }
+    return items
+  }, [hoveredRegion, selectedRegion, viewport.width, base.width])
 
   const applyViewport = useCallback((next: Viewport) => {
     viewportRef.current = next
@@ -311,12 +346,13 @@ export default function UkraineMap({
           )
         })}
 
-        {hoveredRegion && (
-          <g className="region-outline-layer" aria-hidden="true">
-            <path className="region-outline-halo" d={hoveredRegion.path} />
-            <path className="region-outline-line" d={hoveredRegion.path} />
+        {outlines.map((outline) => (
+          <g key={outline.id} className="region-outline-layer" aria-hidden="true">
+            {outline.halo && <path className="region-outline-halo" d={outline.halo} />}
+            {outline.select && <path className="region-outline-select" d={outline.select} />}
+            {outline.line && <path className="region-outline-line" d={outline.line} />}
           </g>
-        )}
+        ))}
       </svg>
 
       <div className="map-controls" role="group" aria-label={t('map.zoomAria')}>

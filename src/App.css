@@ -565,29 +565,29 @@
   fill: var(--map-unknown);
 }
 
-.region-shape.is-selected {
-  stroke: #16231e;
-  stroke-width: calc(3.2px * var(--zoom-scale, 1));
-}
-
 .region-outline-layer {
   pointer-events: none;
 }
 
+/* Контури — заповнені стрічки (див. src/outline-band.ts): у штриха на складних
+   межах Chrome іноді домальовує лише частину, у fill обриву бути не може. */
 .region-outline-halo,
-.region-outline-line {
-  fill: none;
-  stroke-linejoin: round;
+.region-outline-line,
+.region-outline-select {
+  stroke: none;
+  fill-rule: evenodd;
 }
 
 .region-outline-halo {
-  stroke: #ffffff;
-  stroke-width: calc(7px * var(--zoom-scale, 1));
+  fill: #ffffff;
 }
 
 .region-outline-line {
-  stroke: #101d18;
-  stroke-width: calc(2.6px * var(--zoom-scale, 1));
+  fill: #101d18;
+}
+
+.region-outline-select {
+  fill: #16231e;
 }
 
 .map-controls {
@@ -1540,11 +1540,6 @@
   stroke: #8fc3ab;
 }
 
-/* Без цього правила темна обводка вибраної області зникає на темному фоні. */
-:root[data-theme='dark'] .region-shape.is-selected {
-  stroke: #eef9f2;
-}
-
 :root[data-theme='dark'] .region-shape.state-active:hover,
 :root[data-theme='dark'] .region-shape.state-active:focus-visible {
   fill: #ec6b52;
@@ -1594,11 +1589,16 @@
 }
 
 :root[data-theme='dark'] .region-outline-halo {
-  stroke: #0e1714;
+  fill: #0e1714;
 }
 
 :root[data-theme='dark'] .region-outline-line {
-  stroke: #d8f0e4;
+  fill: #d8f0e4;
+}
+
+/* Без цього правила темний контур вибраної області зникає на темному фоні. */
+:root[data-theme='dark'] .region-outline-select {
+  fill: #eef9f2;
 }
 
 :root[data-theme='dark'] .map-controls {
