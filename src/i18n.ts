@@ -244,6 +244,11 @@ const messages = {
   'legend.clear': { uk: 'Не вказано джерелом', en: 'Not reported by source', pl: 'Nie wskazano w źródle' },
   'legend.loading': { uk: 'Завантаження', en: 'Loading', pl: 'Ładowanie' },
   'legend.noData': { uk: 'Немає даних', en: 'No data', pl: 'Brak danych' },
+  'legend.intensity': {
+    uk: 'Колір — тип загрози; насичений відтінок — червоний рівень, світлий — жовтий',
+    en: 'Colour is the threat type; a saturated shade is the red level, a light one the yellow level',
+    pl: 'Kolor oznacza typ zagrożenia; nasycony odcień to poziom czerwony, jasny to żółty',
+  },
 
   'caveat': {
     uk: 'Мапа показує записи джерела, які можуть відставати від офіційних сповіщень; відсутність позначки не гарантує безпеки.',
@@ -367,6 +372,13 @@ const messages = {
   'alertType.chemical': { uk: 'Хімічна загроза', en: 'Chemical threat', pl: 'Zagrożenie chemiczne' },
   'alertType.nuclear': { uk: 'Радіаційна небезпека', en: 'Radiation hazard', pl: 'Zagrożenie radiacyjne' },
   'alertType.other': { uk: 'Інша загроза', en: 'Other threat', pl: 'Inne zagrożenie' },
+
+  'threatKind.air': { uk: 'Повітряна тривога', en: 'Air alert', pl: 'Alarm powietrzny' },
+  'threatKind.artillery': { uk: 'Артобстріл', en: 'Artillery shelling', pl: 'Ostrzał artyleryjski' },
+  'threatKind.urban': { uk: 'Вуличні бої', en: 'Street fighting', pl: 'Walki uliczne' },
+  'threatKind.chemical': { uk: 'Хімічна загроза', en: 'Chemical threat', pl: 'Zagrożenie chemiczne' },
+  'threatKind.radiation': { uk: 'Радіаційна небезпека', en: 'Radiation hazard', pl: 'Zagrożenie radiacyjne' },
+  'threatKind.other': { uk: 'Інша загроза', en: 'Other threat', pl: 'Inne zagrożenie' },
 
   'notify.newCount': { uk: 'Нових загроз: {count}', en: 'New threats: {count}', pl: 'Nowe zagrożenia: {count}' },
   'notify.threat': { uk: 'Загроза: {location}', en: 'Threat: {location}', pl: 'Zagrożenie: {location}' },

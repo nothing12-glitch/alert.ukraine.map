@@ -10,6 +10,18 @@
   --map-clear: #c5d4cb;
   --map-nominal: #93a39a;
   --map-unknown: #d2d9d4;
+  --map-artillery: #b5793f;
+  --map-urban: #4a5fa8;
+  --map-chemical: #2f9e6a;
+  --map-radiation: #8b4f9e;
+  --map-other: #4d7f85;
+  --map-hatch: rgba(23, 35, 30, 0.42);
+  /* Жовтий рівень того самого типу — та барва, але розбавлена фоном мапи. */
+  --map-artillery-soft: color-mix(in srgb, var(--map-artillery) 52%, var(--map-clear));
+  --map-urban-soft: color-mix(in srgb, var(--map-urban) 52%, var(--map-clear));
+  --map-chemical-soft: color-mix(in srgb, var(--map-chemical) 52%, var(--map-clear));
+  --map-radiation-soft: color-mix(in srgb, var(--map-radiation) 52%, var(--map-clear));
+  --map-other-soft: color-mix(in srgb, var(--map-other) 52%, var(--map-clear));
   --sans: Bahnschrift, 'Segoe UI', sans-serif;
   --mono: Consolas, 'Courier New', monospace;
 
@@ -38,6 +50,12 @@
   --map-clear: #2c423a;
   --map-nominal: #506a5f;
   --map-unknown: #35473f;
+  --map-artillery: #cd8b4e;
+  --map-urban: #6b81d8;
+  --map-chemical: #3fae76;
+  --map-radiation: #b06bc4;
+  --map-other: #62989f;
+  --map-hatch: rgba(228, 238, 232, 0.34);
 
   color-scheme: dark;
 }

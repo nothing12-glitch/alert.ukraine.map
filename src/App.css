@@ -451,63 +451,46 @@
   outline: none;
 }
 
-.region-shape.state-active {
-  fill: var(--map-active);
-}
+/* Барва області = тип найважливішої загрози, насиченість = рівень (червоний/жовтий).
+   --region-color збирає обидві складові, тому фарба мапи, маркер списку та індикатор
+   вибраної області завжди показують один і той самий колір. */
+.kind-air { --region-color: var(--map-active); }
+.kind-air.level-yellow { --region-color: var(--map-yellow); }
+.kind-artillery { --region-color: var(--map-artillery); }
+.kind-artillery.level-yellow { --region-color: var(--map-artillery-soft); }
+.kind-urban { --region-color: var(--map-urban); }
+.kind-urban.level-yellow { --region-color: var(--map-urban-soft); }
+.kind-chemical { --region-color: var(--map-chemical); }
+.kind-chemical.level-yellow { --region-color: var(--map-chemical-soft); }
+.kind-radiation { --region-color: var(--map-radiation); }
+.kind-radiation.level-yellow { --region-color: var(--map-radiation-soft); }
+.kind-other { --region-color: var(--map-other); }
+.kind-other.level-yellow { --region-color: var(--map-other-soft); }
 
-.region-shape.state-active.level-yellow {
-  fill: var(--map-yellow);
+.region-shape.state-active,
+.region-shape.state-partial {
+  fill: var(--region-color, var(--map-active));
+  stroke: color-mix(in srgb, var(--region-color, var(--map-active)) 55%, #101010);
 }
 
 .region-shape.state-active:hover,
-.region-shape.state-active:focus-visible {
-  fill: #c83e31;
-  stroke: #76281f;
-}
-
-.region-shape.state-active.level-yellow:hover,
-.region-shape.state-active.level-yellow:focus-visible {
-  fill: #c8921f;
-  stroke: #6d4f0d;
-}
-
-.region-shape.state-partial {
-  fill: url(#partial-hatch-red);
-  stroke: #cf6a55;
-}
-
-.region-shape.state-partial.level-yellow {
-  fill: url(#partial-hatch-yellow);
-  stroke: #c9a03f;
-}
-
+.region-shape.state-active:focus-visible,
 .region-shape.state-partial:hover,
 .region-shape.state-partial:focus-visible {
-  fill: url(#partial-hatch-red);
-  stroke: #76281f;
+  fill: color-mix(in srgb, var(--region-color, var(--map-active)) 82%, #ffffff);
+  stroke: color-mix(in srgb, var(--region-color, var(--map-active)) 45%, #101010);
   stroke-width: calc(2.8px * var(--zoom-scale, 1));
 }
 
-.region-shape.state-partial.level-yellow:hover,
-.region-shape.state-partial.level-yellow:focus-visible {
-  fill: url(#partial-hatch-yellow);
-  stroke: #6d4f0d;
+/* Часткова тривога — ті самі косі лінії поверх кольору типу, що й раніше, але
+   тепер барва знизу належе конкретній загрозі, а не абстрактному «червоному». */
+.region-hatch {
+  stroke: none;
+  pointer-events: none;
 }
 
-.hatch-bg.hatch-red {
-  fill: #f7e0da;
-}
-
-.hatch-bg.hatch-yellow {
-  fill: #f9eed5;
-}
-
-.hatch-line.hatch-red {
-  stroke: #dd6d57;
-}
-
-.hatch-line.hatch-yellow {
-  stroke: #dcae45;
+.hatch-line {
+  stroke: var(--map-hatch);
 }
 
 .region-shape.state-nominal {
@@ -633,6 +616,14 @@
   font-size: 11px;
 }
 
+/* Пояснення до кольорів типів — окремий рядок, щоб не розмивати самі позначки. */
+.map-legend .legend-note {
+  flex-basis: 100%;
+  gap: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
 .legend-dot,
 .row-marker,
 .selected-indicator {
@@ -644,16 +635,25 @@
   background: var(--map-clear);
 }
 
-.legend-red,
-.row-marker.state-active,
-.selected-indicator.state-active {
+.legend-red {
   background: var(--map-active);
 }
 
-.legend-yellow,
-.row-marker.state-active.level-yellow,
-.selected-indicator.state-active.level-yellow {
+.legend-yellow {
   background: var(--map-yellow);
+}
+
+.legend-kind-artillery { background: var(--map-artillery); }
+.legend-kind-urban { background: var(--map-urban); }
+.legend-kind-chemical { background: var(--map-chemical); }
+.legend-kind-radiation { background: var(--map-radiation); }
+.legend-kind-other { background: var(--map-other); }
+
+.row-marker.state-active,
+.row-marker.state-partial,
+.selected-indicator.state-active,
+.selected-indicator.state-partial {
+  background: var(--region-color, var(--map-active));
 }
 
 .legend-nominal,
@@ -665,12 +665,11 @@
 .legend-partial,
 .row-marker.state-partial,
 .selected-indicator.state-partial {
-  background: repeating-linear-gradient(45deg, #dd6d57 0 2px, #f7e0da 2px 5px);
-}
-
-.row-marker.state-partial.level-yellow,
-.selected-indicator.state-partial.level-yellow {
-  background: repeating-linear-gradient(45deg, #dcae45 0 2px, #f9eed5 2px 5px);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--region-color, var(--map-active)) 0 2px,
+    color-mix(in srgb, var(--region-color, var(--map-active)) 22%, var(--map-clear)) 2px 5px
+  );
 }
 
 .legend-unknown,
@@ -1504,52 +1503,16 @@
   stroke: #8fc3ab;
 }
 
-:root[data-theme='dark'] .region-shape.state-active:hover,
-:root[data-theme='dark'] .region-shape.state-active:focus-visible {
-  fill: #ec6b52;
-  stroke: #ffd4c8;
-}
-
-:root[data-theme='dark'] .region-shape.state-active.level-yellow:hover,
-:root[data-theme='dark'] .region-shape.state-active.level-yellow:focus-visible {
-  fill: #eab93f;
-  stroke: #ffe6a8;
-}
-
+:root[data-theme='dark'] .region-shape.state-active,
 :root[data-theme='dark'] .region-shape.state-partial {
-  stroke: #a4523f;
+  stroke: color-mix(in srgb, var(--region-color, var(--map-active)) 55%, #e4eee8);
 }
 
+:root[data-theme='dark'] .region-shape.state-active:hover,
+:root[data-theme='dark'] .region-shape.state-active:focus-visible,
 :root[data-theme='dark'] .region-shape.state-partial:hover,
 :root[data-theme='dark'] .region-shape.state-partial:focus-visible {
-  fill: url(#partial-hatch-red);
-  stroke: #ffd4c8;
-}
-
-:root[data-theme='dark'] .region-shape.state-partial.level-yellow:hover,
-:root[data-theme='dark'] .region-shape.state-partial.level-yellow:focus-visible {
-  fill: url(#partial-hatch-yellow);
-  stroke: #ffe6a8;
-}
-
-:root[data-theme='dark'] .region-shape.state-partial.level-yellow {
-  stroke: #a3802c;
-}
-
-:root[data-theme='dark'] .hatch-bg.hatch-red {
-  fill: #452721;
-}
-
-:root[data-theme='dark'] .hatch-bg.hatch-yellow {
-  fill: #443a1d;
-}
-
-:root[data-theme='dark'] .hatch-line.hatch-red {
-  stroke: #e06a54;
-}
-
-:root[data-theme='dark'] .hatch-line.hatch-yellow {
-  stroke: #d8a52f;
+  fill: color-mix(in srgb, var(--region-color, var(--map-active)) 78%, #ffffff);
 }
 
 :root[data-theme='dark'] .region-outline-halo {
@@ -1806,14 +1769,10 @@
 .region-pulse {
   stroke: none;
   fill-rule: evenodd;
-  fill: var(--map-active);
+  fill: var(--region-color, var(--map-active));
   opacity: 0;
   pointer-events: none;
   animation: region-pulse 1.9s ease-out 2;
-}
-
-.region-pulse.level-yellow {
-  fill: var(--map-yellow);
 }
 
 .region-pulse.state-clear {
@@ -1840,6 +1799,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* «Наживо» не обіцяє наступної перевірки: тут мапа вже реагує на знімок. */
 /* Обидві позначки живуть у темному банері, тому світла тема не змінює їхній колір. */
 .sync-live {
   display: inline-flex;

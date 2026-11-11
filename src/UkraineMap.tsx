@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useI18n } from './i18n-context'
 import { cachedBand } from './outline-band'
-import type { AlertState, Pulse, ThreatLevel } from './map-types'
+import type { AlertState, Pulse, ThreatKind, ThreatLevel } from './map-types'
 
 type MapRegion = { id: string; title: string; path: string }
 type Outline = { id: string; halo: string | null; line: string | null; select: string | null }
@@ -12,6 +12,7 @@ type Props = {
   regions: MapRegion[]
   statuses: Record<string, AlertState>
   levels: Record<string, ThreatLevel>
+  kinds: Record<string, ThreatKind>
   labels: Record<string, string>
   selectedId: string | null
   focusRequest: { regionId: string; token: number } | null
@@ -75,6 +76,7 @@ export default function UkraineMap({
   regions,
   statuses,
   levels,
+  kinds,
   labels,
   selectedId,
   focusRequest,
@@ -314,19 +316,17 @@ export default function UkraineMap({
         aria-label={t('map.aria')}
       >
         <defs>
-          <pattern id="partial-hatch-red" width={hatchTile} height={hatchTile} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width={hatchTile} height={hatchTile} className="hatch-bg hatch-red" />
-            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * hatchScale} className="hatch-line hatch-red" />
-          </pattern>
-          <pattern id="partial-hatch-yellow" width={hatchTile} height={hatchTile} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width={hatchTile} height={hatchTile} className="hatch-bg hatch-yellow" />
-            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.6 * hatchScale} className="hatch-line hatch-yellow" />
+          {/* Штрихування — окрема накладка поверх кольору типу загрози: одна й та сама
+              коса лінія працює за будь-якої барви й будь-якої теми. */}
+          <pattern id="district-hatch" width={hatchTile} height={hatchTile} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2={hatchTile} strokeWidth={3.4 * hatchScale} className="hatch-line" />
           </pattern>
         </defs>
 
         {regions.map((region) => {
           const state = statuses[region.id] ?? 'unknown'
           const level = levels[region.id]
+          const kind = kinds[region.id]
           const label = labels[region.id] ?? ''
           const isSelected = selectedId === region.id
           const ariaLabel = `${region.title}: ${label}`
@@ -337,7 +337,7 @@ export default function UkraineMap({
               ref={(node) => {
                 pathRefs.current[region.id] = node
               }}
-              className={`region-shape state-${state}${level ? ` level-${level}` : ''}${isSelected ? ' is-selected' : ''}`}
+              className={`region-shape state-${state}${level ? ` level-${level}` : ''}${kind ? ` kind-${kind}` : ''}${isSelected ? ' is-selected' : ''}`}
               d={region.path}
               role="button"
               tabIndex={0}
@@ -361,10 +361,16 @@ export default function UkraineMap({
           )
         })}
 
+        {regions
+          .filter((region) => statuses[region.id] === 'partial')
+          .map((region) => (
+            <path key={`hatch-${region.id}`} className="region-hatch" d={region.path} fill="url(#district-hatch)" aria-hidden="true" />
+          ))}
+
         {pulseRings.map((ring) => (
           <path
             key={`${ring.regionId}-${pulse.token}`}
-            className={`region-pulse state-${statuses[ring.regionId] ?? 'unknown'} level-${ring.level}`}
+            className={`region-pulse state-${statuses[ring.regionId] ?? 'unknown'} level-${ring.level} kind-${ring.kind}`}
             d={ring.band}
             aria-hidden="true"
           />

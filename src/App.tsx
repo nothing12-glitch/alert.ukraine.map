@@ -40,7 +40,7 @@ import {
   type MessageKey,
 } from './i18n'
 import { useI18n } from './i18n-context'
-import type { AlertState, Pulse, ThreatLevel } from './map-types'
+import type { AlertState, Pulse, ThreatKind, ThreatLevel } from './map-types'
 import './App.css'
 
 type ConnectionState = 'loading' | 'live' | 'error'
@@ -65,6 +65,7 @@ type Theme = 'light' | 'dark'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
 type HourlySample = { minute: number; active: number; red: number }
+type RegionVisual = { state: AlertState; level: ThreatLevel | null; kind: ThreatKind | null }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
 // Без власного бекенду мапа читає хвилинні знімки, які публікує workflow у гілці feed.
@@ -167,6 +168,28 @@ const levelKeys: Record<ThreatLevel, MessageKey> = {
   yellow: 'level.yellow',
 }
 
+const kindKeys: Record<ThreatKind, MessageKey> = {
+  air: 'threatKind.air',
+  artillery: 'threatKind.artillery',
+  urban: 'threatKind.urban',
+  chemical: 'threatKind.chemical',
+  radiation: 'threatKind.radiation',
+  other: 'threatKind.other',
+}
+
+const legendKinds: ThreatKind[] = ['artillery', 'urban', 'chemical', 'radiation', 'other']
+
+// Порядок, за яким одна загроза перекриває іншу кольором на мапі: повітряна тривога
+// майже завжди супровідна, тож спеціальні загрози (радіація, хімія) головують.
+const kindPriority: Record<ThreatKind, number> = {
+  radiation: 5,
+  chemical: 4,
+  urban: 3,
+  artillery: 2,
+  air: 1,
+  other: 0,
+}
+
 const statusOrder: Record<AlertState, number> = {
   active: 0,
   partial: 1,
@@ -205,8 +228,22 @@ function worstLevel(current: ThreatLevel | undefined, next: ThreatLevel): Threat
 type RegionSummary = {
   wholeLevel?: ThreatLevel
   partialLevel?: ThreatLevel
+  wholeThreat?: Threat
+  partialThreat?: Threat
   nominal: boolean
   raions: OfficialAlert[]
+}
+
+type Threat = { kind: ThreatKind; level: ThreatLevel }
+
+// Найгірша загроза scope: спочатку за типом, у межах одного типу — за рівнем.
+function worstThreat(current: Threat | undefined, alert: OfficialAlert): Threat {
+  const kind = getThreatKind(alert)
+  const level = getAlertLevel(alert)
+  if (!current) return { kind, level }
+  if (kindPriority[kind] > kindPriority[current.kind]) return { kind, level: current.level === 'red' ? 'red' : level }
+  if (kindPriority[kind] < kindPriority[current.kind]) return current
+  return { kind: current.kind, level: current.level === 'red' || level === 'red' ? 'red' : 'yellow' }
 }
 
 function summarizeRegions(alerts: OfficialAlert[]) {
@@ -221,11 +258,13 @@ function summarizeRegions(alerts: OfficialAlert[]) {
 
     if (getAlertScope(alert) === 'raion') {
       summary.partialLevel = worstLevel(summary.partialLevel, level)
+      summary.partialThreat = worstThreat(summary.partialThreat, alert)
       summary.raions.push(alert)
     } else if (isStandingOccupiedAlert(alert)) {
       summary.nominal = true
     } else {
       summary.wholeLevel = worstLevel(summary.wholeLevel, level)
+      summary.wholeThreat = worstThreat(summary.wholeThreat, alert)
     }
   }
 
@@ -267,6 +306,18 @@ function isStandingOccupiedAlert(alert: OfficialAlert) {
 
 function isAirAlert(alert: OfficialAlert) {
   return normalizeLocation(alert.type).includes('повітряна тривога')
+}
+
+// Джерело віддає тип українською підписом, тому колір мапи прив’язуємо до нього,
+// а не до коду: так знімок гілки feed не потребує нової форми даних.
+function getThreatKind(alert: OfficialAlert): ThreatKind {
+  const type = normalizeLocation(alert.type)
+  if (type.includes('артобстріл')) return 'artillery'
+  if (type.includes('вуличні бої')) return 'urban'
+  if (type.includes('хімічн')) return 'chemical'
+  if (type.includes('радіаційн')) return 'radiation'
+  if (type.includes('повітряна тривога')) return 'air'
+  return 'other'
 }
 
 const regionIdByLocation = new Map<string, string>(
@@ -486,7 +537,7 @@ function App() {
   const [notifyFavoritesOnly, setNotifyFavoritesOnly] = useState(() => readStored('alert-map-notify-favorites-only', false))
   const [notifySound, setNotifySound] = useState(() => readStored('alert-map-notify-sound', true))
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
-  const previousStates = useRef<Record<string, { state: AlertState; level: ThreatLevel | null }> | null>(null)
+  const previousStates = useRef<Record<string, RegionVisual> | null>(null)
   const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang })
 
   useEffect(() => {
@@ -635,6 +686,18 @@ function App() {
       return level ? [[region.id, level]] : []
     }),
   ) as Record<string, ThreatLevel>
+  // Колір області визначає найважливіша з присутніх загроз: повітряна тривога майже
+  // скрізь супровідна, тому артобстріл чи хімічна загроза перекривають її барвою.
+  const regionKinds = Object.fromEntries(
+    regions.flatMap((region): [string, ThreatKind][] => {
+      const summary = summaries[region.id]
+      const threats = [summary?.wholeThreat, summary?.partialThreat]
+      const alerted = threats.filter((threat): threat is Threat => Boolean(threat))
+      if (!alerted.length) return []
+      const dominant = alerted.reduce((best, threat) => (kindPriority[threat.kind] > kindPriority[best.kind] ? threat : best))
+      return [[region.id, dominant.kind]]
+    }),
+  ) as Record<string, ThreatKind>
   const partialCounts = Object.fromEntries(
     regions.flatMap((region): [string, number][] => {
       const count = summaries[region.id]?.raions.length ?? 0
@@ -644,9 +707,13 @@ function App() {
   // «Відбій» тримаємо деякий час після зняття тривоги: так видно, що область щойно
   // відійшла, а не просто не має даних. Ті самі зміни дають імпульс на мапі.
   useEffect(() => {
-    const current = Object.fromEntries(regions.map((region): [string, { state: AlertState; level: ThreatLevel | null }] => (
-      [region.id, { state: statuses[region.id] ?? 'unknown', level: regionLevels[region.id] ?? null }]
-    ))) as Record<string, { state: AlertState; level: ThreatLevel | null }>
+    const current = Object.fromEntries(regions.map((region): [string, RegionVisual] => (
+      [region.id, {
+        state: statuses[region.id] ?? 'unknown',
+        level: regionLevels[region.id] ?? null,
+        kind: regionKinds[region.id] ?? null,
+      }]
+    ))) as Record<string, RegionVisual>
     const previous = previousStates.current
     previousStates.current = current
     if (!previous) return
@@ -655,13 +722,19 @@ function App() {
     // Перший знімок не є зміною: без «unknown» у порівнянні мапа не спалахує кільцями
     // одразу після завантаження.
     const changed = regions.filter((region) => previous[region.id].state !== 'unknown'
-      && (previous[region.id].state !== current[region.id].state || previous[region.id].level !== current[region.id].level))
+      && (previous[region.id].state !== current[region.id].state
+        || previous[region.id].level !== current[region.id].level
+        || previous[region.id].kind !== current[region.id].kind))
     if (!changed.length) return
 
     const stamp = Date.now()
     setPulse({
       token: stamp,
-      items: changed.slice(0, pulseLimit).map((region) => ({ regionId: region.id, level: current[region.id].level ?? 'yellow' })),
+      items: changed.slice(0, pulseLimit).map((region) => ({
+        regionId: region.id,
+        level: current[region.id].level ?? 'yellow',
+        kind: current[region.id].kind ?? 'air',
+      })),
     })
 
     const ended = changed.filter((region) => alerted(previous[region.id].state) && current[region.id].state === 'clear')
@@ -674,7 +747,7 @@ function App() {
       for (const region of ended) next[region.id] = stamp
       return next
     })
-  }, [statuses, regionLevels])
+  }, [statuses, regionLevels, regionKinds])
 
   const clearedIds = new Set(
     regions
@@ -686,11 +759,15 @@ function App() {
     regions.map((region) => {
       const state = statuses[region.id] ?? 'unknown'
       const level = regionLevels[region.id]
+      const kind = regionKinds[region.id]
       const count = partialCounts[region.id]
-      const label = state === 'active' && level
-        ? t(levelKeys[level])
+      const threatLabel = level && kind !== 'air'
+        ? `${t(kindKeys[kind ?? 'air'])} · ${t(levelKeys[level])}`
+        : level ? t(levelKeys[level]) : ''
+      const label = state === 'active'
+        ? threatLabel || t(statusKeys[state])
         : state === 'partial' && count
-          ? `${t('status.partial')} · ${count}`
+          ? `${threatLabel || t('status.partial')} · ${count}`
           : clearedIds.has(region.id)
             ? t('status.cleared')
             : t(statusKeys[state])
@@ -1019,6 +1096,7 @@ function App() {
             regions={mapRegions}
             statuses={statuses}
             levels={regionLevels}
+            kinds={regionKinds}
             labels={regionLabels}
             selectedId={selectedId}
             focusRequest={focusRequest}
@@ -1031,9 +1109,13 @@ function App() {
           <div className="map-legend" aria-label={t('legend.aria')}>
             <span><i className="legend-dot legend-red" />{t('level.red')}</span>
             <span><i className="legend-dot legend-yellow" />{t('level.yellow')}</span>
+            {legendKinds.map((kind) => (
+              <span key={kind}><i className={`legend-dot legend-kind-${kind}`} />{t(kindKeys[kind])}</span>
+            ))}
             <span><i className="legend-dot legend-partial" />{t('legend.partial')}</span>
             <span><i className="legend-dot legend-nominal" />{t('legend.nominal')}</span>
             <span><i className="legend-dot legend-clear" />{t('legend.clear')}</span>
+            <span className="legend-note">{t('legend.intensity')}</span>
             {pulse.items.length > 0 && (
               <span><i className="legend-dot legend-pulse" />{t('legend.pulse')}</span>
             )}
@@ -1044,7 +1126,7 @@ function App() {
 
           {selectedRegion && (
             <div className="selected-region" aria-live="polite">
-              <div className={`selected-indicator state-${visualStateOf(selectedRegion.id)}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}`} />
+              <div className={`selected-indicator state-${visualStateOf(selectedRegion.id)}${regionLevels[selectedRegion.id] ? ` level-${regionLevels[selectedRegion.id]}` : ''}${regionKinds[selectedRegion.id] ? ` kind-${regionKinds[selectedRegion.id]}` : ''}`} />
               <div className="selected-region-copy">
                 <strong>{displayTitle(selectedRegion)}</strong>
                 <span>{regionLabels[selectedRegion.id]}</span>
@@ -1193,6 +1275,7 @@ function App() {
             {visibleRegions.map((region) => {
               const visualState = visualStateOf(region.id)
               const level = regionLevels[region.id]
+              const kindClass = regionKinds[region.id] ? ` kind-${regionKinds[region.id]}` : ''
               return (
                 <button
                   key={region.id}
@@ -1200,7 +1283,7 @@ function App() {
                   type="button"
                   onClick={() => setSelectedId(region.id)}
                 >
-                  <span className={`row-marker state-${visualState}${level ? ` level-${level}` : ''}`} />
+                  <span className={`row-marker state-${visualState}${level ? ` level-${level}` : ''}${kindClass}`} />
                   <span className="row-name">{displayTitle(region)}</span>
                   <span className={`row-status status-label-${visualState}${level ? ` level-${level}` : ''}`}>{regionLabels[region.id]}</span>
                   <ArrowUpRight size={14} className="row-arrow" />
