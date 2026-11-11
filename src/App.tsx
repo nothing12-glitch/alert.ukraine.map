@@ -70,6 +70,9 @@ const staticFeedUrl = (import.meta.env.VITE_ALERTS_FEED_URL ?? '').trim() ||
   'https://raw.githubusercontent.com/nothing12-glitch/alert.ukraine.map/feed/alerts.json'
 const useProxyFeed = import.meta.env.DEV || Boolean(apiBaseUrl)
 
+// Знімок мав би свіжати кожні 5 хвилин; понад чверть години без оновлення — вже підозріло.
+const staleAfterMs = 15 * 60_000
+
 // Знімок у гілці feed публікують раз на 5 хвилин, тому міняємо лише відро кешу CDN.
 function feedRequestUrl() {
   if (useProxyFeed) return `${apiBaseUrl}/api/alerts`
@@ -307,6 +310,7 @@ function App() {
   const [feedSource, setFeedSource] = useState('')
   const [connection, setConnection] = useState<ConnectionState>('loading')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [isFresh, setIsFresh] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(readInitialRegion)
   const [focusRequest, setFocusRequest] = useState<{ regionId: string; token: number } | null>(null)
@@ -404,6 +408,7 @@ function App() {
     setAlerts(feedAlerts)
     setFeedSource(feed.source)
     setUpdatedAt(new Date(feed.fetchedAt))
+    setIsFresh(Date.now() - new Date(feed.fetchedAt).getTime() < staleAfterMs)
     setConnection('live')
   }, [notificationsEnabled])
 
@@ -721,8 +726,8 @@ function App() {
           </button>
         </div>
         <div className="topbar-status" aria-live="polite">
-          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : connection}`} />
-          <span>{usingOfficialLive ? t('conn.official') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
+          <span className={`connection-dot connection-${usingOfficialLive ? 'live' : connection === 'error' || !isFresh ? 'error' : connection}`} />
+          <span>{usingOfficialLive ? t('conn.official') : !isFresh ? t('conn.stale') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 
@@ -784,12 +789,14 @@ function App() {
         </div>
       </div>
 
-      {!usingOfficialLive && connection === 'error' && (
+      {!usingOfficialLive && (connection === 'error' || !isFresh) && (
         <div className="stale-notice" role="status">
           <WifiOff size={16} />
-          <span>{updatedAt
-            ? t('stale.withData', { time: formatClock(lang, updatedAt.toISOString()) })
-            : t('stale.polling')}</span>
+          <span>{!updatedAt
+            ? t('stale.polling')
+            : isFresh
+              ? t('stale.withData', { time: formatClock(lang, updatedAt.toISOString()) })
+              : t('stale.frozen', { time: formatClock(lang, updatedAt.toISOString()) })}</span>
           <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>
         </div>
       )}

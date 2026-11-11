@@ -37,6 +37,7 @@ const messages = {
 
   'conn.official': { uk: 'ОФІЦІЙНИЙ PUSH', en: 'OFFICIAL PUSH', pl: 'OFICJALNY PUSH' },
   'conn.polling': { uk: 'ДАНІ ОНОВЛЮЮТЬСЯ', en: 'DATA REFRESHING', pl: 'DANE ODŚWIEŻANE' },
+  'conn.stale': { uk: 'ДАНІ ЗАСТАРІЛІ', en: 'DATA OUTDATED', pl: 'DANE NIEAKTUALNE' },
   'conn.offline': { uk: 'НЕМАЄ ЗВ’ЯЗКУ', en: 'NO CONNECTION', pl: 'BRAK POŁĄCZENIA' },
   'conn.connecting': { uk: 'З’ЄДНАННЯ', en: 'CONNECTING', pl: 'ŁĄCZENIE' },
 
@@ -132,6 +133,11 @@ const messages = {
     uk: 'Показано останні отримані дані станом на {time}.',
     en: 'Showing the last received data as of {time}.',
     pl: 'Pokazano ostatnie otrzymane dane na {time}.',
+  },
+  'stale.frozen': {
+    uk: 'Джерело не оновлюється: останній знімок станом на {time}.',
+    en: 'The source is not updating: the last snapshot is from {time}.',
+    pl: 'Źródło się nie aktualizuje: ostatnia migawka jest z {time}.',
   },
   'stale.polling': {
     uk: 'Перевірте з’єднання та спробуйте оновити дані.',
