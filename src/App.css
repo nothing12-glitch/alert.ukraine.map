@@ -484,6 +484,13 @@
   transition: fill 180ms ease, stroke 180ms ease;
 }
 
+/* Клік фокусує path, і Chrome малює стандартне кільце як рамку навколо
+   bounding box області. Клавіатурний індикатор дають правила :focus-visible
+   нижче та шар region-outline. */
+.region-shape:focus {
+  outline: none;
+}
+
 .region-shape:hover,
 .region-shape:focus-visible {
   fill: #91b6a4;
