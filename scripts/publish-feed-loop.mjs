@@ -82,6 +82,11 @@ async function pushFeedBranch(token, repository) {
   await preparePushRepo()
 
   const files = [alertsFileName, ...(await readdir(snapshotDirectory)).filter(isSnapshotFileName)]
+  // Чернетковий репозиторій переживає prune у .feed: без прибирання звідси старі
+  // знімки повертаються в кожен коміт, і за п'ять годин гілка росте до сотень файлів.
+  const keep = new Set(files)
+  const stale = (await readdir(pushDirectory)).filter((name) => isSnapshotFileName(name) && !keep.has(name))
+  await Promise.all(stale.map((name) => rm(path.join(pushDirectory, name))))
   await Promise.all(files.map((name) => copyFile(path.join(snapshotDirectory, name), path.join(pushDirectory, name))))
 
   await git(['add', '-A'])
@@ -103,13 +108,34 @@ function api(pathname, token, init = {}) {
   })
 }
 
-async function activeRunCount(token, repository) {
-  const runId = Number(process.env.GITHUB_RUN_ID ?? 0)
-  const response = await api(`/repos/${repository}/actions/workflows/${workflowFile}/runs?per_page=20`, token)
-  if (!response.ok) throw new Error(`GitHub API returned HTTP ${response.status}`)
+// Залеглий queued-ран тримає групу конкурентності, але не стартує ніколи: якби ми
+// вважали його живим, наглядач «успішно» пропускав би перевірку, а мапа замерла б на добу.
+const queuedGraceMs = 15 * 60_000
+const handoverTries = 15
+const handoverPauseMs = 20_000
 
-  const body = await response.json()
-  return (body.workflow_runs ?? []).filter((entry) => entry.status !== 'completed' && entry.id !== runId).length
+async function liveRunCount(token, repository) {
+  const runId = Number(process.env.GITHUB_RUN_ID ?? 0)
+  let body
+  try {
+    const response = await api(`/repos/${repository}/actions/workflows/${workflowFile}/runs?per_page=20`, token)
+    if (!response.ok) throw new Error(`GitHub API returned HTTP ${response.status}`)
+    body = await response.json()
+  } catch (error) {
+    // Без відповіді API не знаємо нічого, а замовчуванням небезпечніше за подвійний
+    // цикл: саме так мапа й замерла на добу. Публікуємо й розбираємось у логах.
+    log(`Не вдалося перевірити інші запуски: ${redact(error.message ?? error)}. Продовжую публікацію.`)
+    return 0
+  }
+
+  const others = (body.workflow_runs ?? []).filter((entry) => entry.id !== runId && entry.status !== 'completed')
+  const live = others.filter((entry) => entry.status === 'in_progress'
+    || (entry.status === 'queued' && Date.now() - Date.parse(entry.created_at) < queuedGraceMs))
+
+  if (others.length > live.length) {
+    log(`${others.length - live.length} запуск(ки) висять у queued понад ${queuedGraceMs / 60_000} хв — не рахуються активними.`)
+  }
+  return live.length
 }
 
 async function dispatchSuccessor(token, repository, ref) {
@@ -133,14 +159,33 @@ async function main() {
   if (!token || !repository) throw new Error('GITHUB_TOKEN and GITHUB_REPOSITORY must be set.')
 
   // Cron слугує наглядачем: ланцюжок безперервних запусків уже тримає хвилинний ритм,
-  // тому за плановим тригером стартуємо лише коли ланцюжок перервався.
-  if (process.env.GITHUB_EVENT_NAME === 'schedule') {
-    const others = await activeRunCount(token, repository)
+  // тому за плановим тригером стартуємо лише коли ланцюжок перервався. Чекати навмисне
+  // не можемо: п'ять хвилин очікування на кожному запуску за розкладом з'їли б у весь
+  // безкоштовний ліміт раннерів.
+  const eventName = process.env.GITHUB_EVENT_NAME
+  if (eventName === 'schedule') {
+    const others = await liveRunCount(token, repository)
     if (others) {
       log(`Feed loop is already running (${others} active); scheduled check-in skipped.`)
       return
     }
     log('No active feed loop; scheduled check-in takes over.')
+  }
+
+  // Наступник естафети стартує, коли попередник ще дописує останній знімок, тому
+  // dispatch-запуск дає попереднику кілька хвилин на завершення і лише потім вирішує,
+  // чи не створив би він другий паралельний цикл.
+  if (eventName !== 'schedule') {
+    for (let attempt = 1; attempt <= handoverTries; attempt += 1) {
+      const others = await liveRunCount(token, repository)
+      if (!others) break
+      if (attempt === handoverTries) {
+        log(`Попередній цикл так і не завершився (${others}); не створюю другий паралельний цикл.`)
+        return
+      }
+      log(`Естафета ще не передана (${others} живий); чекаю ${handoverPauseMs / 1000} с (${attempt}/${handoverTries}).`)
+      await new Promise((resolve) => setTimeout(resolve, handoverPauseMs))
+    }
   }
 
   const budgetMs = loopMinutes * 60_000
@@ -171,7 +216,7 @@ async function main() {
   }
 
   try {
-    const others = await activeRunCount(token, repository)
+    const others = await liveRunCount(token, repository)
     if (others) {
       log(`Another run is already queued or active (${others}); not starting a second chain.`)
       return
