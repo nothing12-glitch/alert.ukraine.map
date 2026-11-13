@@ -76,7 +76,10 @@ const useProxyFeed = import.meta.env.DEV || Boolean(apiBaseUrl)
 // Офіційне джерело дає не більше одного запиту на хвилину, тож знімок свіжає щохвилини.
 // Понад три пропущені хвилини — це вже збій публікації, а не просто спокійне небо.
 const staleAfterMs = 4 * 60_000
+// Після п'ятнадцяти хвилин мовчання публікатора пропонуємо повідомити про збій.
+const reportAfterMs = 15 * 60_000
 const requestTimeoutMs = 12_000
+const lastFeedKey = 'alert-map-last-feed'
 
 // Позначка знімка збігається з назвою файла у гілці feed (shared/feed-snapshots.mjs).
 function minuteStampAt(offsetMinutes: number) {
@@ -97,7 +100,57 @@ function feedRequests() {
   ]
 }
 
-async function readFeedSnapshot() {
+// Коротка назва знімка з URL для журналу спроб: видно, яку саме хвилину не віддало.
+function requestLabel(url: string) {
+  const stamp = url.match(/alerts-(\d{8}-\d{4})\.json/)?.[1]
+  return stamp ? `${stamp.slice(9, 11)}:${stamp.slice(11, 13)}` : 'alerts.json'
+}
+
+// Позначка знімка у форматі «ГГ:ХХ» за UTC — той самий час, що й у назві файла.
+function minuteStampOf(iso: string) {
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return '--:--'
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
+}
+
+const channelLogLimit = 60
+
+type ChannelEntry = {
+  at: number
+  stamp: string
+  misses: string[]
+  fromCache: boolean
+  ok: boolean
+}
+
+type FeedReadResult = { feed: AlertFeed; fromCache: boolean; misses: string[] }
+
+// Останній вдалий знімок переживає і перезавантаження сторінки: перший рендер при
+// мертвому каналу показує відомих стан, а не порожню мапу без жодного вогнища.
+function readCachedFeed(): AlertFeed | null {
+  const cached = readStored<AlertFeed | null>(lastFeedKey, null)
+  return cached && Array.isArray(cached.alerts) && cached.fetchedAt ? cached : null
+}
+
+// Помилка читання теж має нести список спроб: без нього діагностика каналу показувала б
+// лише вдалі запити, а збій виглядав би як тиша.
+function readFailure(message: string, misses: string[]) {
+  const error = new Error(message) as Error & { misses?: string[] }
+  error.misses = misses
+  return error
+}
+
+// День за UTC: назви знімків теж у UTC, тож «не з цього дня» має збігатися з файлом.
+function utcDayOf(at: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`
+}
+
+const reportIssueUrl = 'https://github.com/nothing12-glitch/alert.ukraine.map/issues/new'
+
+async function readFeedSnapshot(): Promise<FeedReadResult> {
+  const misses: string[] = []
   let lastError: unknown
 
   for (const { url, cache } of feedRequests()) {
@@ -112,13 +165,26 @@ async function readFeedSnapshot() {
 
       const feed = await response.json() as AlertFeed
       if (!Array.isArray(feed.alerts) || !feed.fetchedAt) throw new Error('Некоректна відповідь джерела.')
-      return feed
+      writeStored(lastFeedKey, feed)
+      return { feed, fromCache: false, misses }
     } catch (error) {
       lastError = error
+      misses.push(requestLabel(url))
     }
   }
 
-  throw lastError
+  // Замість порожньої карти й «немає зв'язку» показуємо останній вдалий знімок з
+  // локального кешу: навіть добовий розрив каналу краще читати як «дані старі», ніж
+  // як «небезпеки немає».
+  const cached = readCachedFeed()
+  if (cached) {
+    return { feed: cached, fromCache: true, misses }
+  }
+
+  throw readFailure(
+    lastError instanceof Error ? lastError.message : 'Не вдалося отримати знімок.',
+    misses,
+  )
 }
 
 const regionMetadata: Record<string, { title: string; reportTitle: string }> = {
@@ -490,11 +556,16 @@ function HourlySparkline({ samples, lang }: { samples: HourlySample[]; lang: Lan
 
 function App() {
   const { lang, setLang, t } = useI18n()
-  const [alerts, setAlerts] = useState<OfficialAlert[]>([])
-  const [feedSource, setFeedSource] = useState('')
+  const [cachedFeed] = useState(readCachedFeed)
+  const [alerts, setAlerts] = useState<OfficialAlert[]>(() => (cachedFeed?.alerts ?? [])
+    .filter((alert) => getAlertRegionId(alert) !== undefined))
+  const [feedSource, setFeedSource] = useState(cachedFeed?.source ?? '')
   const [connection, setConnection] = useState<ConnectionState>('loading')
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [isFresh, setIsFresh] = useState(true)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(() => (cachedFeed ? new Date(cachedFeed.fetchedAt) : null))
+  const [isFresh, setIsFresh] = useState(() => !cachedFeed ||
+    Date.now() - new Date(cachedFeed.fetchedAt).getTime() < staleAfterMs)
+  const [fromCache, setFromCache] = useState(() => Boolean(cachedFeed))
+  const [channelLog, setChannelLog] = useState<ChannelEntry[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(readInitialRegion)
   const [focusRequest, setFocusRequest] = useState<{ regionId: string; token: number } | null>(null)
@@ -559,14 +630,14 @@ function App() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const applyFeed = useCallback((feed: AlertFeed) => {
+  const applyFeed = useCallback(({ feed, fromCache, misses }: FeedReadResult) => {
     // Показуємо лише області, які є на мапі: Seвастополь та інші окремі міста сюди не входять.
     const feedAlerts = feed.alerts.filter((alert) => getAlertRegionId(alert) !== undefined)
     const currentAlerts = new Map(feedAlerts.map((alert) => [getAlertKey(alert), alert]))
     const currentKeys = new Set(currentAlerts.keys())
     const previous = previousAlerts.current
 
-    if (previous) {
+    if (previous && !fromCache) {
       const newAlerts = feedAlerts.filter((alert) => !previous.has(getAlertKey(alert)))
       const endedAlerts = [...previous.values()].filter((alert) => !currentKeys.has(getAlertKey(alert)))
       const now = new Date().toISOString()
@@ -594,10 +665,18 @@ function App() {
     previousAlerts.current = currentAlerts
     setAlerts(feedAlerts)
     setFeedSource(feed.source)
+    setFromCache(fromCache)
+    setChannelLog((current) => [...current, {
+      at: Date.now(),
+      stamp: minuteStampOf(feed.fetchedAt),
+      misses,
+      fromCache,
+      ok: true,
+    }].slice(-channelLogLimit))
     const snapshotAt = new Date(feed.fetchedAt)
     setUpdatedAt(snapshotAt)
     setIsFresh(Date.now() - snapshotAt.getTime() < staleAfterMs)
-    setConnection('live')
+    setConnection(fromCache ? 'error' : 'live')
 
     // Годинний графік будуємо з часу самого знімка: пропущена хвилина публікації має
     // лишити прогалину, а не виглядати як спокійне небо.
@@ -613,8 +692,15 @@ function App() {
 
     try {
       applyFeed(await readFeedSnapshot())
-    } catch {
+    } catch (error) {
       setConnection('error')
+      setChannelLog((current) => [...current, {
+        at: Date.now(),
+        stamp: '--:--',
+        misses: (error as { misses?: string[] }).misses ?? [],
+        fromCache: false,
+        ok: false,
+      }].slice(-channelLogLimit))
     } finally {
       setIsRefreshing(false)
     }
@@ -812,6 +898,15 @@ function App() {
             ? t('headline.yellow', { count: yellowCount, regions: regionWord(lang, yellowCount, 'locative') })
             : t('headline.partial', { count: activeCount, regions: regionWord(lang, activeCount, 'locative') })
         : t('headline.none')
+
+  // Стан каналу рахуємо від віку знімка, а не від коду відповіді: fetch міг минути, а
+  // дані на мапі вже мертві, і навпаки — кешований знімок свіжий, але канал не відповідає.
+  const dataAgeMs = updatedAt ? Math.max(0, tickAt - updatedAt.getTime()) : 0
+  const isSilentChannel = dataAgeMs >= reportAfterMs
+  const isOtherUtcDay = Boolean(updatedAt && utcDayOf(updatedAt) !== utcDayOf(new Date(tickAt)))
+  const hourEntries = channelLog.filter((entry) => entry.at >= tickAt - 3_600_000)
+  const hourOk = hourEntries.filter((entry) => entry.ok && !entry.fromCache).length
+  const hourMisses = hourEntries.reduce((total, entry) => total + entry.misses.length, 0)
 
   const toggleFavorite = (regionId: string) => {
     setFavorites((current) => current.includes(regionId)
@@ -1014,15 +1109,60 @@ function App() {
       </div>
 
       {(connection === 'error' || !isFresh) && (
-        <div className="stale-notice" role="status">
+        <div className={`stale-notice${isSilentChannel ? ' is-severe' : ''}`} role="status">
           <WifiOff size={16} />
-          <span>{!updatedAt
-            ? t('stale.polling')
-            : isFresh
-              ? t('stale.withData', { time: formatClock(lang, updatedAt.toISOString()) })
-              : t('stale.frozen', { time: formatClock(lang, updatedAt.toISOString()) })}</span>
-          <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>
+          <div className="stale-copy">
+            <strong>{updatedAt
+              ? t(isSilentChannel ? 'stale.down' : 'conn.stale')
+              : t(connection === 'error' ? 'conn.offline' : 'conn.connecting')}</strong>
+            <span>{!updatedAt
+              ? t('stale.polling')
+              : [
+                  t(isFresh ? 'stale.withData' : 'stale.frozen', { time: formatClock(lang, updatedAt.toISOString()) }),
+                  t('stale.age', { age: formatDuration(lang, updatedAt.toISOString()) }),
+                  fromCache ? t('stale.cached') : '',
+                  isOtherUtcDay ? t('stale.otherDay') : '',
+                ].filter(Boolean).join(' ')}</span>
+          </div>
+          <div className="stale-actions">
+            <button type="button" onClick={() => void refresh()}>{t('stale.retry')}</button>
+            {isSilentChannel && (
+              <a className="stale-report" href={reportIssueUrl} target="_blank" rel="noreferrer">
+                {t('stale.report')}
+                <ArrowUpRight size={13} />
+              </a>
+            )}
+          </div>
         </div>
+      )}
+
+      {connection !== 'loading' && (
+        <details className="channel-panel">
+          <summary>
+            <Activity size={14} />
+            <span className="eyebrow">{t('channel.eyebrow')}</span>
+            <span className="channel-summary">{t('channel.summary', {
+              ok: hourOk,
+              total: hourEntries.length,
+            })}{hourMisses ? ` · ${t('channel.missTotal', { count: hourMisses })}` : ''}</span>
+          </summary>
+          <p className="channel-hint">{t('channel.hint')}</p>
+          {hourEntries.length ? (
+            <ul className="channel-log">
+              {[...hourEntries].reverse().map((entry, index) => (
+                <li key={`${entry.at}-${index}`} className={entry.ok ? '' : 'channel-bad'}>
+                  <span className="channel-time">{formatClock(lang, new Date(entry.at).toISOString())}</span>
+                  <span className="channel-stamp">{entry.ok ? entry.stamp : '—'}</span>
+                  {entry.fromCache && <em className="channel-tag">{t('channel.fromCache')}</em>}
+                  {!entry.ok && <em className="channel-tag bad">{t('channel.failed')}</em>}
+                  <span className="channel-misses">
+                    {entry.misses.length ? t('channel.missed', { list: entry.misses.join(' ') }) : t('channel.clean')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="channel-hint">{t('channel.empty')}</p>}
+        </details>
       )}
 
       <div className="change-ticker" aria-label={t('ticker.eyebrow')} title={t('ticker.hint')}>
@@ -1073,19 +1213,28 @@ function App() {
             <button type="button" className={typeFilter === 'other' ? 'filter-active' : ''} onClick={() => setTypeFilter('other')}>{t('filter.other')} <span>{otherThreatCount}</span></button>
           </div>
 
-          <UkraineMap
-            regions={mapRegions}
-            statuses={statuses}
-            levels={regionLevels}
-            kinds={regionKinds}
-            labels={regionLabels}
-            selectedId={selectedId}
-            focusRequest={focusRequest}
-            pulse={pulse}
-            onSelect={setSelectedId}
-            onFocusRegion={focusRegion}
-            viewBox={ukraineMap.viewBox}
-          />
+          <div className={`map-holder${feedReady && !isFresh ? ' is-stale' : ''}`}>
+            <UkraineMap
+              regions={mapRegions}
+              statuses={statuses}
+              levels={regionLevels}
+              kinds={regionKinds}
+              labels={regionLabels}
+              selectedId={selectedId}
+              focusRequest={focusRequest}
+              pulse={pulse}
+              onSelect={setSelectedId}
+              onFocusRegion={focusRegion}
+              viewBox={ukraineMap.viewBox}
+            />
+            {/* Вік даних має бути видно там, де дивляться на мапу, а не тільки в банері над нею. */}
+            {updatedAt && !isFresh && (
+              <div className="map-age-badge" title={t('stale.age', { age: formatDuration(lang, updatedAt.toISOString()) })}>
+                <Clock3 size={13} />
+                <span>{formatDuration(lang, updatedAt.toISOString())}</span>
+              </div>
+            )}
+          </div>
 
           <div className="map-legend" aria-label={t('legend.aria')}>
             <span><i className="legend-dot legend-red" />{t('level.red')}</span>

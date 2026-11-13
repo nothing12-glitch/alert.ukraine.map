@@ -1683,6 +1683,11 @@
   .map-stage { height: min(70vw, 480px); min-height: 290px; }
   .region-panel { padding-top: 0; }
   .region-list { display: grid; max-height: 370px; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+  .stale-notice { flex-wrap: wrap; }
+  .stale-copy { flex: 1 1 calc(100% - 30px); }
+  .stale-actions { width: 100%; justify-content: flex-end; }
+  .channel-log { max-height: 132px; }
+  .channel-misses { margin-left: 0; }
   .row-status { display: inline; }
   .row-arrow { display: none; }
 }
@@ -1856,6 +1861,160 @@
 
 .spark-yellow {
   fill: var(--map-yellow);
+}
+
+/* Стійкість каналу: банер з віком даних, журнал спроб і позначка прямо на мапі. */
+.stale-copy {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stale-copy strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.stale-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.stale-notice.is-severe {
+  color: #7d2222;
+  background: #ffe6e2;
+  border-color: #e9a99f;
+}
+
+.stale-report {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.channel-panel {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.channel-panel summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.channel-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.channel-summary {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.channel-hint {
+  margin: 0;
+  padding: 0 12px 9px;
+  color: var(--muted);
+}
+
+.channel-log {
+  display: grid;
+  gap: 3px;
+  max-height: 170px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 9px 12px;
+  list-style: none;
+  border-top: 1px dashed var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.channel-log li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-log li.channel-bad .channel-stamp {
+  color: var(--alert);
+}
+
+.channel-time {
+  color: var(--muted);
+}
+
+.channel-stamp {
+  font-weight: 700;
+}
+
+.channel-tag {
+  padding: 0 4px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-style: normal;
+}
+
+.channel-tag.bad {
+  color: var(--alert);
+  border-color: var(--alert);
+}
+
+.channel-misses {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.map-holder {
+  position: relative;
+}
+
+.map-holder.is-stale .ukraine-map {
+  filter: saturate(0.55);
+}
+
+.map-age-badge {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  color: #7d2222;
+  background: rgba(255, 236, 232, 0.92);
+  border: 1px solid #e0a79c;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+:root[data-theme='dark'] .stale-notice.is-severe {
+  color: #ffb3a6;
+  background: rgba(120, 30, 22, 0.32);
+  border-color: #7d3a32;
+}
+
+:root[data-theme='dark'] .map-age-badge {
+  color: #ffc4b8;
+  background: rgba(28, 20, 18, 0.86);
+  border-color: #8a443a;
 }
 
 @media (prefers-reduced-motion: reduce) {

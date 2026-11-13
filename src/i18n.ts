@@ -172,6 +172,48 @@ const messages = {
     pl: 'Sprawdź połączenie i spróbuj odświeżyć dane.',
   },
   'stale.retry': { uk: 'Повторити', en: 'Retry', pl: 'Spróbuj ponownie' },
+  'stale.down': {
+    uk: 'ДЖЕРЕЛО МОВЧИТЬ',
+    en: 'SOURCE IS SILENT',
+    pl: 'ŹRÓDŁO MILCZY',
+  },
+  'stale.age': {
+    uk: 'Вік даних — {age}.',
+    en: 'Data is {age} old.',
+    pl: 'Dane mają {age}.',
+  },
+  'stale.cached': {
+    uk: 'Це останній вдалий знімок із пам’яті браузера: мережа не віддала жодного файла.',
+    en: 'This is the last working snapshot kept in your browser: the network returned no file.',
+    pl: 'To ostatnia udana migawka z pamięci przeglądarki: sieć nie zwróciła żadnego pliku.',
+  },
+  'stale.otherDay': {
+    uk: 'Знімок не з цієї доби (UTC).',
+    en: 'The snapshot is not from this UTC day.',
+    pl: 'Migawka nie jest z tego dnia UTC.',
+  },
+  'stale.report': { uk: 'Повідомити про збій', en: 'Report an outage', pl: 'Zgłoś awarię' },
+  'channel.eyebrow': { uk: 'Діагностика каналу', en: 'Channel diagnostics', pl: 'Diagnostyka kanału' },
+  'channel.hint': {
+    uk: 'Спроби читання за останню годину: позначка отриманого знімка та хвилини, яких не вдалося дістати.',
+    en: 'Read attempts over the last hour: the snapshot that arrived and the minutes that could not be fetched.',
+    pl: 'Próby odczytu z ostatniej godziny: otrzymana migawka i minuty, których nie udało się pobrać.',
+  },
+  'channel.summary': { uk: '{ok} з {total} успішних', en: '{ok} of {total} succeeded', pl: '{ok} z {total} udanych' },
+  'channel.clean': { uk: 'без пропусків', en: 'no misses', pl: 'bez przerw' },
+  'channel.missed': { uk: 'не віддали: {list}', en: 'missing: {list}', pl: 'brak: {list}' },
+  'channel.missTotal': {
+    uk: '{count} пропущених спроб',
+    en: '{count} missed attempts',
+    pl: '{count} pominiętych prób',
+  },
+  'channel.fromCache': { uk: 'кеш', en: 'cache', pl: 'pamięć' },
+  'channel.failed': { uk: 'невдача', en: 'failed', pl: 'błąd' },
+  'channel.empty': {
+    uk: 'За останню годину спроб читання не було.',
+    en: 'No read attempts in the last hour.',
+    pl: 'W ostatniej godzinie nie było prób odczytu.',
+  },
 
   'map.eyebrow': {
     uk: 'МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ',
