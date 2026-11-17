@@ -12,7 +12,7 @@ const base = self.location.pathname.replace(/[^/]*$/, '')
 // Плейсхолдер замінює збірка (див. vite.config.ts): імена бандлів із хешем вручну не вгадати,
 // а без них перший офлайн-візит показав би порожню сторінку.
 const precachedAssets = __PRECACHED_ASSETS__
-const shellUrls = [`${base}index.html`, `${base}manifest.webmanifest`, ...precachedAssets]
+const shellUrls = [base, `${base}index.html`, `${base}manifest.webmanifest`, `${base}widget.html`, ...precachedAssets]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -71,14 +71,16 @@ async function networkFirstSnapshot(request) {
 
 async function networkFirstShell(request) {
   const cache = await caches.open(SHELL_CACHE)
+  // Ключ — шлях навігації: інакше офлайн-віджет отримав би замість себе головну мапу.
+  const key = new URL(request.url).pathname
   try {
     const response = await fetch(request)
     if (response.ok) {
-      cache.put(`${base}index.html`, response.clone()).catch(() => undefined)
+      cache.put(key, response.clone()).catch(() => undefined)
     }
     return response
   } catch (error) {
-    const stored = await cache.match(`${base}index.html`)
+    const stored = await cache.match(key)
     if (stored) return stored
     throw error
   }

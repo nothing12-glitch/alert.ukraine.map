@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Мапа тривог — віджет</title>
+    <style>
+      :root {
+        --canvas: #f2f5f0;
+        --panel: #ffffff;
+        --ink: #16211d;
+        --muted: #5f7269;
+        --line: #d3ddd6;
+        --red: #c8371f;
+        --yellow: #a97a12;
+        --clear: #2f7d5f;
+        --mono: Consolas, 'Courier New', monospace;
+      }
+
+      html[data-theme='dark'] {
+        --canvas: #0e1714;
+        --panel: #16241f;
+        --ink: #e4eee8;
+        --muted: #8fa39a;
+        --line: #2a3d36;
+        --red: #f26a54;
+        --yellow: #e6bd4c;
+        --clear: #74d3ae;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 12px;
+        color: var(--ink);
+        background: var(--canvas);
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+
+      .widget {
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--muted);
+        border-radius: 6px;
+        padding: 12px 14px;
+        background: var(--panel);
+      }
+
+      .widget.is-red { border-left-color: var(--red); }
+      .widget.is-yellow { border-left-color: var(--yellow); }
+      .widget.is-clear { border-left-color: var(--clear); }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .headline {
+        margin: 6px 0 2px;
+        font-size: 17px;
+        line-height: 1.25;
+        font-weight: 700;
+      }
+
+      .is-red .headline { color: var(--red); }
+      .is-yellow .headline { color: var(--yellow); }
+      .is-clear .headline { color: var(--clear); }
+
+      .stamp {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .stamp.is-stale { color: var(--red); }
+
+      .rows {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 5px;
+      }
+
+      .rows li {
+        display: grid;
+        grid-template-columns: 9px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); }
+      .dot.red { background: var(--red); }
+
+      .rows .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .rows .when { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+      .error {
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--red);
+      }
+
+      .builder {
+        margin-top: 14px;
+        border: 1px dashed var(--line);
+        border-radius: 6px;
+        padding: 12px 14px;
+        background: var(--panel);
+      }
+
+      .builder summary {
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .controls {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .controls label {
+        display: grid;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .controls select,
+      .controls input,
+      .controls textarea {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--ink);
+        background: var(--canvas);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .controls textarea { min-height: 74px; resize: vertical; }
+
+      .builder button {
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--ink);
+        background: var(--canvas);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .builder button:hover { border-color: var(--muted); }
+
+      .hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); }
+
+      /* Вбудований віджет заповнює iframe цілком, інакше сторінка сайту отримує зайву смугу прокрутки. */
+      html.framed,
+      html.framed body { height: 100%; }
+
+      html.framed body {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      html.framed .widget {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      html.framed .rows {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+        scrollbar-width: thin;
+      }
+    </style>
+    <script>
+      // Клас потрібен до першого малювання, щоб смуга прокрутки встигла зникнути.
+      if (window.self !== window.top) document.documentElement.classList.add('framed')
+    </script>
+  </head>
+  <body>
+    <div class="widget" id="widget">
+      <p class="eyebrow" id="eyebrow">Повітряні тривоги</p>
+      <p class="headline" id="headline">очікування даних…</p>
+      <p class="stamp" id="stamp"></p>
+      <ul class="rows" id="rows"></ul>
+      <p class="error" id="error" hidden></p>
+    </div>
+
+    <details class="builder" id="builder" hidden>
+      <summary id="builderSummary">Код для вставки</summary>
+      <div class="controls">
+        <label><span id="lblRegion">Область</span>
+          <select id="optRegion"></select>
+        </label>
+        <label><span id="lblLang">Мова</span>
+          <select id="optLang">
+            <option value="uk">Українська</option>
+            <option value="en">English</option>
+            <option value="pl">Polski</option>
+          </select>
+        </label>
+        <label><span id="lblTheme">Тема</span>
+          <select id="optTheme">
+            <option value="light">Світла</option>
+            <option value="dark">Темна</option>
+          </select>
+        </label>
+        <label><span id="lblSize">Ширина й висота, px</span>
+          <input id="optSize" value="360, 300" />
+        </label>
+        <label><span id="lblCode">IFrame</span>
+          <textarea id="optCode" readonly></textarea>
+        </label>
+      </div>
+      <button type="button" id="copyCode">Скопіювати код</button>
+      <p class="hint" id="builderHint"></p>
+    </details>
+
+    <script>
+      // Віджет читає ті самі хвилинні знімки, що й основна мапа: попередня хвилина,
+      // позаминула, і лише потім рухомий alerts.json. Бекенду тут немає взагалі.
+      const SNAPSHOT_BASE = 'https://raw.githubusercontent.com/nothing12-glitch/alert.ukraine.map/feed/'
+      const STALE_AFTER_MS = 4 * 60_000
+      const REFRESH_MS = 30_000
+      const MAX_ROWS = 6
+
+      const strings = {
+        uk: {
+          eyebrow: 'Повітряні тривоги',
+          red: 'Червоний рівень у {n} {w}',
+          yellow: 'Жовтий рівень у {n} {w}',
+          clear: 'Тривог немає',
+          regionForms: ['регіоні', 'регіонах', 'регіонах'],
+          units: { day: 'д', hour: 'год', minute: 'хв' },
+          received: 'ОТРИМАНО {time}',
+          stale: 'ДАНІ ЗАСТАРІЛІ · {time}',
+          offline: 'НЕМАЄ ЗВʼЯЗКУ з джерелом',
+          code: 'Код для вставки',
+          region: 'Область',
+          lang: 'Мова',
+          theme: 'Тема',
+          size: 'Ширина й висота, px',
+          iframe: 'IFrame',
+          copy: 'Скопіювати код',
+          copied: 'Скопійовано',
+          hint: 'Цей рядок вставляється на будь-яку сторінку: віджет оновлюється сам і не потребує ані ключа, ані бекенду.',
+          all: 'Вся країна',
+        },
+        en: {
+          eyebrow: 'Air alerts',
+          red: 'Red level in {n} {w}',
+          yellow: 'Yellow level in {n} {w}',
+          clear: 'No alerts',
+          regionForms: ['region', 'regions', 'regions'],
+          units: { day: 'd', hour: 'h', minute: 'min' },
+          received: 'RECEIVED {time}',
+          stale: 'DATA OUTDATED · {time}',
+          offline: 'NO CONNECTION to the source',
+          code: 'Embed code',
+          region: 'Oblast',
+          lang: 'Language',
+          theme: 'Theme',
+          size: 'Width and height, px',
+          iframe: 'IFrame',
+          copy: 'Copy code',
+          copied: 'Copied',
+          hint: 'Paste this line into any page: the widget refreshes itself and needs no key or backend.',
+          all: 'Whole country',
+        },
+        pl: {
+          eyebrow: 'Alarmy powietrzne',
+          red: 'Poziom czerwony w {n} {w}',
+          yellow: 'Poziom żółty w {n} {w}',
+          clear: 'Brak alarmów',
+          regionForms: ['regionie', 'regionach', 'regionach'],
+          units: { day: 'd', hour: 'godz.', minute: 'min' },
+          received: 'ODEBRANO {time}',
+          stale: 'DANE NIEAKTUALNE · {time}',
+          offline: 'BRAK POŁĄCZENIA ze źródłem',
+          code: 'Kod do osadzenia',
+          region: 'Obwód',
+          lang: 'Język',
+          theme: 'Motyw',
+          size: 'Szerokość i wysokość, px',
+          iframe: 'IFrame',
+          copy: 'Kopiuj kod',
+          copied: 'Skopiowano',
+          hint: 'Wklej ten wiersz na dowolną stronę: widget odświeża się sam i nie potrzebuje klucza ani backendu.',
+          all: 'Cały kraj',
+        },
+      }
+
+      const oblasts = [
+        'Івано-Франківська область', 'Автономна Республіка Крим', 'Волинська область', 'Вінницька область',
+        'Дніпропетровська область', 'Донецька область', 'Житомирська область', 'Закарпатська область',
+        'Запорізька область', 'Київська область', 'Кіровоградська область', 'Луганська область',
+        'Львівська область', 'Миколаївська область', 'Одеська область', 'Полтавська область',
+        'Рівненська область', 'Сумська область', 'Тернопільська область', 'Харківська область',
+        'Херсонська область', 'Хмельницька область', 'Черкаська область', 'Чернівецька область',
+        'Чернігівська область', 'м. Київ',
+      ]
+
+      const params = new URLSearchParams(location.search)
+      const lang = strings[params.get('lang')] ? params.get('lang') : 'uk'
+      const theme = params.get('theme') === 'dark' ? 'dark' : 'light'
+      const feedBase = (params.get('feed') || SNAPSHOT_BASE).replace(/\/?$/, '/')
+      const onlyRegion = params.get('region')
+
+      const copy = strings[lang]
+      const t = (key, values) => String(copy[key]).replace(/\{(\w+)\}/g, (_m, name) => values?.[name] ?? '')
+
+      document.documentElement.lang = lang
+      document.documentElement.dataset.theme = theme
+      document.title = `${copy.eyebrow} · alert.ukraine.map`
+
+      const pad = (value) => String(value).padStart(2, '0')
+
+      function snapshotName(offsetMinutes) {
+        const date = new Date(Date.now() + offsetMinutes * 60_000)
+        return `alerts-${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}.json`
+      }
+
+      async function fetchFirst(urls) {
+        let lastError
+        for (const url of urls) {
+          try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' } })
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const feed = await response.json()
+            if (!Array.isArray(feed.alerts) || !feed.fetchedAt) throw new Error('bad feed')
+            return feed
+          } catch (error) {
+            lastError = error
+          }
+        }
+        throw lastError
+      }
+
+      function minutesSince(iso) {
+        const at = new Date(iso).getTime()
+        return Number.isFinite(at) ? Math.max(0, Math.round((Date.now() - at) / 60_000)) : 0
+      }
+
+      // Тривалість у діб/год/хв: «14101 хв» ніхто не читає, а під Luhansk-застарілі
+      // тривоги саме такі числа й приходять.
+      function formatMinutes(minutes) {
+        const total = Math.max(0, Math.floor(minutes))
+        const units = copy.units
+        const parts = []
+        const days = Math.floor(total / 1440)
+        const hours = Math.floor((total % 1440) / 60)
+        const rest = total % 60
+        if (days) parts.push(`${days} ${units.day}`)
+        if (hours) parts.push(`${hours} ${units.hour}`)
+        if (rest || !parts.length) parts.push(`${rest} ${units.minute}`)
+        return parts.join(' ')
+      }
+
+      function regionWord(count) {
+        const category = new Intl.PluralRules({ uk: 'uk-UA', pl: 'pl-PL' }[lang] ?? 'en-GB').select(count)
+        return copy.regionForms[category === 'one' ? 0 : category === 'few' ? 1 : 2]
+      }
+
+      function render(feed) {
+        const alerts = (feed?.alerts ?? []).filter((alert) => !onlyRegion || alert.region === onlyRegion)
+        const byRegion = new Map()
+
+        for (const alert of alerts) {
+          const known = byRegion.get(alert.region)
+          if (!known || (known.alertLevel === 'yellow' && alert.alertLevel === 'red')) byRegion.set(alert.region, alert)
+        }
+
+        const entries = [...byRegion.values()].sort((a, b) =>
+          (a.alertLevel === b.alertLevel ? 0 : a.alertLevel === 'red' ? -1 : 1) ||
+          new Date(b.startedAtIso) - new Date(a.startedAtIso) ||
+          a.region.localeCompare(b.region, 'uk'))
+
+        const red = entries.filter((entry) => entry.alertLevel === 'red').length
+        const widget = document.getElementById('widget')
+        widget.classList.toggle('is-red', red > 0)
+        widget.classList.toggle('is-yellow', red === 0 && entries.length > 0)
+        widget.classList.toggle('is-clear', entries.length === 0)
+
+        document.getElementById('eyebrow').textContent =
+          onlyRegion ? `${copy.eyebrow} · ${onlyRegion}` : copy.eyebrow
+
+        const word = regionWord(entries.length)
+        document.getElementById('headline').textContent = red > 0
+          ? t('red', { n: entries.length, w: word })
+          : entries.length ? t('yellow', { n: entries.length, w: word }) : copy.clear
+
+        const stamp = document.getElementById('stamp')
+        const age = minutesSince(feed?.fetchedAt)
+        const clock = new Date(feed?.fetchedAt ?? Date.now())
+        const label = `${pad(clock.getHours())}:${pad(clock.getMinutes())}`
+        stamp.textContent = feed ? (age * 60_000 > STALE_AFTER_MS ? t('stale', { time: label }) : t('received', { time: label })) : ''
+        stamp.classList.toggle('is-stale', age * 60_000 > STALE_AFTER_MS)
+
+        const rows = document.getElementById('rows')
+        rows.textContent = ''
+        for (const entry of entries.slice(0, MAX_ROWS)) {
+          const li = document.createElement('li')
+          const dot = document.createElement('span')
+          dot.className = `dot${entry.alertLevel === 'red' ? ' red' : ''}`
+          const where = document.createElement('span')
+          where.className = 'where'
+          where.textContent = entry.scope === 'raion' ? `${entry.location} · ${entry.region}` : entry.region
+          const when = document.createElement('span')
+          when.className = 'when'
+          when.textContent = formatMinutes(minutesSince(entry.startedAtIso))
+          li.append(dot, where, when)
+          rows.append(li)
+        }
+        if (entries.length > MAX_ROWS) {
+          const more = document.createElement('li')
+          more.innerHTML = `<span></span><span class="where">+${entries.length - MAX_ROWS}</span><span class="when"></span>`
+          rows.append(more)
+        }
+
+        document.getElementById('error').hidden = true
+      }
+
+      async function refresh() {
+        try {
+          render(await fetchFirst([
+            `${feedBase}${snapshotName(-1)}`,
+            `${feedBase}${snapshotName(-2)}`,
+            `${feedBase}alerts.json`,
+          ]))
+        } catch {
+          const error = document.getElementById('error')
+          error.textContent = copy.offline
+          error.hidden = false
+        }
+      }
+
+      // Конструктор коду показуємо лише коли сторінка відкрита напряму, не в чужому iframe.
+      const isEmbedded = window.self !== window.top
+      document.getElementById('builder').hidden = isEmbedded
+
+      if (!isEmbedded) {
+        const select = document.getElementById('optRegion')
+        select.innerHTML = `<option value="">${copy.all}</option>` +
+          oblasts.map((name) => `<option value="${name}">${name}</option>`).join('')
+        select.value = onlyRegion ?? ''
+        document.getElementById('optLang').value = lang
+        document.getElementById('optTheme').value = theme
+
+        for (const [id, text] of [['builderSummary', 'code'], ['lblRegion', 'region'], ['lblLang', 'lang'],
+          ['lblTheme', 'theme'], ['lblSize', 'size'], ['lblCode', 'iframe'], ['copyCode', 'copy']]) {
+          document.getElementById(id).textContent = copy[text]
+        }
+        document.getElementById('builderHint').textContent = copy.hint
+
+        const codeBox = document.getElementById('optCode')
+
+        function buildCode() {
+          const query = new URLSearchParams()
+          if (select.value) query.set('region', select.value)
+          query.set('lang', document.getElementById('optLang').value)
+          query.set('theme', document.getElementById('optTheme').value)
+          const [width, height] = document.getElementById('optSize').value.split(/[^\d]+/).filter(Boolean)
+          const url = `${location.origin}${location.pathname}?${query.toString()}`
+          codeBox.value = `<iframe src="${url}" width="${width || 360}" height="${height || 300}"` +
+            ` title="${copy.eyebrow}" loading="lazy" style="border:0;border-radius:6px"></iframe>`
+        }
+
+        document.querySelectorAll('#builder select, #builder input').forEach((field) =>
+          field.addEventListener('change', buildCode))
+        document.getElementById('copyCode').addEventListener('click', async () => {
+          buildCode()
+          try {
+            await navigator.clipboard.writeText(codeBox.value)
+            document.getElementById('copyCode').textContent = copy.copied
+          } catch {
+            codeBox.select()
+          }
+        })
+        buildCode()
+      }
+
+      refresh()
+      window.setInterval(refresh, REFRESH_MS)
+    </script>
+  </body>
+</html>

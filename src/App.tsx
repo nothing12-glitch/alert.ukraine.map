@@ -1695,6 +1695,7 @@ function App() {
         <span>
           {t('footer.borders')} <a href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">MapSVG</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
           {feedSource && <> · {t('footer.data')} <a href={sourceUrl} target="_blank" rel="noreferrer">{t('footer.alarmSource')}</a></>}
+          {' · '}<a href={`${import.meta.env.BASE_URL}widget.html`}>{t('footer.widget')}</a>
         </span>
       </footer>
     </main>

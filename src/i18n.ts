@@ -499,6 +499,11 @@ const messages = {
     en: 'Alert data — UkraineAlarm',
     pl: 'Dane alarmów — UkraineAlarm',
   },
+  'footer.widget': {
+    uk: 'Віджет для свого сайту',
+    en: 'Widget for your site',
+    pl: 'Widżet na Twoją stronę',
+  },
 } as const satisfies Record<string, Record<Language, string>>
 
 export type MessageKey = keyof typeof messages
