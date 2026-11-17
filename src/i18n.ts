@@ -215,6 +215,37 @@ const messages = {
     pl: 'W ostatniej godzinie nie było prób odczytu.',
   },
 
+  'day.eyebrow': { uk: 'ІСТОРІЯ ЗА ДОБУ', en: '24-HOUR HISTORY', pl: 'HISTORIA 24 GODZIN' },
+  'day.hint': {
+    uk: 'Мапа запам’ятовує кожен п’ятихвилинний зріз, доки вкладка відкрита. Порожній стовпчик — спокій, сірий — прогалина в даних.',
+    en: 'The map remembers every five-minute slice while the tab is open. An empty bar is calm, a grey one is a gap in the data.',
+    pl: 'Mapa zapamiętuje każdy pięciominutowy odczyt, gdy karta jest otwarta. Pusty słupek to spokój, szary to luka w danych.',
+  },
+  'day.coverage': { uk: '{buckets} кошиків · покрито {percent}% доби', en: '{buckets} buckets · {percent}% of the day covered', pl: '{buckets} koszyków · {percent}% doby' },
+  'day.axisStart': { uk: '−24 год', en: '−24 h', pl: '−24 godz' },
+  'day.axisMid': { uk: '−12 год', en: '−12 h', pl: '−12 godz' },
+  'day.axisEnd': { uk: 'зараз', en: 'now', pl: 'teraz' },
+  'day.observed': { uk: 'КОШИКІВ ІЗ ДАНИМИ', en: 'BUCKETS WITH DATA', pl: 'KOSZYKÓW Z DANYMI' },
+  'day.quiet': { uk: 'БЕЗ ТРИВОГ', en: 'WITHOUT ALERTS', pl: 'BEZ ALARMÓW' },
+  'day.gaps': { uk: 'ПРОГАЛИН', en: 'GAPS', pl: 'LUK' },
+  'day.redUnit': { uk: 'РЕГІОНО-ХВИЛИН ЧЕРВОНИХ', en: 'RED REGION-MINUTES', pl: 'CZERWONYCH REGIONOMINUT' },
+  'day.ranking': { uk: 'НАЙДОВШЕ ПІД ЗАГРОЗОЮ', en: 'LONGEST UNDER THREAT', pl: 'NAJDŁUŻEJ POD ZAGROŻENIEM' },
+  'day.csv': { uk: 'CSV історії', en: 'History CSV', pl: 'CSV historii' },
+  'day.empty': {
+    uk: 'Історії ще немає: мапа має пропрацювати відкритою хоча б один п’ятихвилинний кошик.',
+    en: 'No history yet: the map has to stay open for at least one five-minute bucket.',
+    pl: 'Historii jeszcze brak: mapa musi być otwarta choć przez jeden pięciominutowy koszyk.',
+  },
+  'day.aria': {
+    uk: 'Графік кількості областей із тривогою за останню добу',
+    en: 'Chart of oblasts with an alert over the last day',
+    pl: 'Wykres obwodów z alarmem w ciągu ostatniej doby',
+  },
+  'day.csvStart': { uk: 'Початок кошика (UTC)', en: 'Bucket start (UTC)', pl: 'Początek koszyka (UTC)' },
+  'day.csvActive': { uk: 'Областей із тривогою', en: 'Oblasts with alert', pl: 'Obwodów z alarmem' },
+  'day.csvRed': { uk: 'Червоного рівня', en: 'At red level', pl: 'Czerwonego poziomu' },
+  'day.csvRegions': { uk: 'Області', en: 'Oblasts', pl: 'Obwody' },
+
   'map.eyebrow': {
     uk: 'МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ',
     en: 'REAL-TIME MONITORING',
@@ -629,19 +660,22 @@ export function formatAge(lang: Language, seconds: number) {
   return `${Math.floor(minutes / 60)} ${units.hour}`
 }
 
-export function formatDuration(lang: Language, iso: string) {
-  const startedAt = new Date(iso).getTime()
-  if (!Number.isFinite(startedAt)) return ''
-
+export function formatMinutes(lang: Language, minutes: number) {
   const units = durationUnits[lang]
-  const minutes = Math.max(0, Math.floor((Date.now() - startedAt) / 60_000))
-  const days = Math.floor(minutes / 1440)
-  const hours = Math.floor((minutes % 1440) / 60)
-  const rest = minutes % 60
+  const total = Math.max(0, Math.floor(minutes))
+  const days = Math.floor(total / 1440)
+  const hours = Math.floor((total % 1440) / 60)
+  const rest = total % 60
   const parts: string[] = []
   if (days) parts.push(`${days} ${units.day}`)
   if (hours) parts.push(`${hours} ${units.hour}`)
   if (rest || parts.length === 0) parts.push(`${rest} ${units.minute}`)
   return parts.join(' ')
+}
+
+export function formatDuration(lang: Language, iso: string) {
+  const startedAt = new Date(iso).getTime()
+  if (!Number.isFinite(startedAt)) return ''
+  return formatMinutes(lang, (Date.now() - startedAt) / 60_000)
 }
 

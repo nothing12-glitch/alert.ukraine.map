@@ -32,6 +32,7 @@ import {
   formatDateTime,
   formatDuration,
   formatAge,
+  formatMinutes,
   languageOptions,
   regionTitle,
   regionWord,
@@ -65,6 +66,7 @@ type Theme = 'light' | 'dark'
 type ActivityEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert; at: string }
 type ToastEvent = { id: string; action: 'new' | 'ended'; alert: OfficialAlert }
 type HourlySample = { minute: number; active: number; red: number }
+type DayBucket = { minute: number; active: string[]; red: string[] }
 type RegionVisual = { state: AlertState; level: ThreatLevel | null; kind: ThreatKind | null }
 
 const apiBaseUrl = (import.meta.env.VITE_ALERTS_API_URL ?? '').replace(/\/$/, '')
@@ -269,6 +271,10 @@ const livePollIntervalMs = 5_000
 const pulseLimit = 6
 // Графік тримає по одному зрізу на хвилинний знімок за останню годину.
 const hourlyBucketCount = 60
+// Добова історія — це 288 п'ятихвилинних кошиків; саме стільки вміщає добу без дірок.
+const dayBucketMs = 5 * 60_000
+const dayBucketCount = 288
+const dayHistoryKey = 'alert-map-day-history'
 const tickerLimit = 8
 
 function normalizeLocation(value: string) {
@@ -340,6 +346,16 @@ function snapshotCounts(alerts: OfficialAlert[]) {
   }
 }
 
+// Добовий кошик запам'ятовує імена областей, а не лічильники: так перелік лідерів
+// можна порахувати за будь-яким зрізом, навіть якщо набір регіонів зміниться.
+function daySnapshot(alerts: OfficialAlert[]) {
+  const entries = Object.entries(summarizeRegions(alerts))
+  return {
+    active: entries.filter(([, summary]) => summary.wholeLevel || summary.partialLevel).map(([id]) => id).sort(),
+    red: entries.filter(([, summary]) => summary.wholeLevel === 'red' || summary.partialLevel === 'red').map(([id]) => id).sort(),
+  }
+}
+
 // Додаємо зріз до годинної вибірки. Та сама хвилина переглядається, а не дублюється,
 // а занадто старі зрізи відсікаються. Якщо нічого не змінилось — повертаємо той самий
 // масив, щоб дарма не писати в localStorage на кожному опитуванні.
@@ -349,6 +365,61 @@ function appendHourlySample(samples: HourlySample[], sample: HourlySample) {
   if (last?.minute !== sample.minute) return [...recent, sample]
   if (last.active === sample.active && last.red === sample.red && recent.length === samples.length) return samples
   return [...recent.slice(0, -1), sample]
+}
+
+function sameRegionSet(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+// Кошик доби оновлюється, лише коли картина справді змінилась: інакше добу поспіль
+// писали б однакові рядки, і журнал ріс би без жодної нової тривоги.
+function appendDayBucket(buckets: DayBucket[], bucket: DayBucket): DayBucket[] {
+  const last = buckets[buckets.length - 1]
+  if (last && bucket.minute < last.minute) return buckets
+  const recent = buckets.filter((item) => item.minute <= bucket.minute && item.minute > bucket.minute - dayBucketCount)
+  const lastIndex = recent.length - 1
+  const previous = recent[lastIndex]
+  if (previous && previous.minute === bucket.minute) {
+    if (sameRegionSet(previous.active, bucket.active) && sameRegionSet(previous.red, bucket.red)) return buckets
+    return [...recent.slice(0, lastIndex), bucket]
+  }
+  return [...recent, bucket]
+}
+
+// Статистика доби будується з кошиків, а не з подій: порожній кошик — це спокій,
+// а відсутній — прогалина, і показувати їх треба по-різному.
+function buildDayStats(buckets: DayBucket[], regionIds: string[], currentMinute: number) {
+  const minutes: Record<string, number> = {}
+  const redById: Record<string, number> = {}
+  for (const id of regionIds) {
+    minutes[id] = 0
+    redById[id] = 0
+  }
+
+  let redMinutes = 0
+  let quietBuckets = 0
+
+  for (const bucket of buckets) {
+    redMinutes += bucket.red.length * 5
+    if (bucket.active.length === 0) quietBuckets += 1
+    for (const id of bucket.active) {
+      if (minutes[id] !== undefined) minutes[id] += 5
+    }
+    for (const id of bucket.red) {
+      if (redById[id] !== undefined) redById[id] += 5
+    }
+  }
+
+  const span = buckets.length ? currentMinute - buckets[0].minute : 0
+  return {
+    minutes,
+    redById,
+    redMinutes,
+    quiet: quietBuckets,
+    span,
+    coverage: buckets.length ? Math.min(100, Math.round((buckets.length / Math.max(1, span)) * 100)) : 0,
+    observed: buckets.length,
+  }
 }
 
 function getAlertKey(alert: OfficialAlert) {
@@ -554,6 +625,41 @@ function HourlySparkline({ samples, lang }: { samples: HourlySample[]; lang: Lan
   )
 }
 
+// Добовий графік: по одному стовпчику на п'ятихвилинний кошик. Порожній стовпчик —
+// це спокій, а сірий — прогалина в даних; показувати їх однаково було б брехнею.
+function DayHistoryChart({ buckets, currentMinute, lang }: { buckets: DayBucket[]; currentMinute: number; lang: Language }) {
+  const firstMinute = currentMinute - dayBucketCount + 1
+  const byMinute = new Map(buckets.map((bucket) => [bucket.minute, bucket]))
+  const peak = Math.max(1, ...buckets.map((bucket) => bucket.active.length))
+  const slots = []
+
+  for (let minute = firstMinute; minute <= currentMinute; minute += 1) {
+    const bucket = byMinute.get(minute)
+    const x = minute - firstMinute
+
+    if (!bucket) {
+      slots.push(<rect key={`gap-${minute}`} className="day-gap" x={x} y={0} width={1} height={60} />)
+      continue
+    }
+
+    const redHeight = (bucket.red.length / peak) * 58
+    const yellowHeight = ((bucket.active.length - bucket.red.length) / peak) * 58
+    slots.push(
+      <g key={minute}>
+        <rect className="day-base" x={x} y={0} width={1} height={60} />
+        {redHeight > 0 && <rect className="spark-red" x={x} y={60 - redHeight} width={0.86} height={redHeight} />}
+        {yellowHeight > 0 && <rect className="spark-yellow" x={x} y={60 - redHeight - yellowHeight} width={0.86} height={yellowHeight} />}
+      </g>,
+    )
+  }
+
+  return (
+    <svg className="day-chart" viewBox={`0 0 ${dayBucketCount} 60`} preserveAspectRatio="none" role="img" aria-label={translate(lang, 'day.aria')}>
+      {slots}
+    </svg>
+  )
+}
+
 function App() {
   const { lang, setLang, t } = useI18n()
   const [cachedFeed] = useState(readCachedFeed)
@@ -576,6 +682,7 @@ function App() {
   const [pulse, setPulse] = useState<Pulse>({ token: 0, items: [] })
   const [lastPollAt, setLastPollAt] = useState(() => Date.now())
   const [hourlySamples, setHourlySamples] = useState<HourlySample[]>(() => readStored<HourlySample[]>('alert-map-hourly', []))
+  const [dayHistory, setDayHistory] = useState<DayBucket[]>(() => readStored<DayBucket[]>(dayHistoryKey, []))
   const [copied, setCopied] = useState(false)
   const [tickAt, setTickAt] = useState(() => Date.now())
   const [search, setSearch] = useState('')
@@ -684,6 +791,10 @@ function App() {
       current,
       { minute: Math.floor(snapshotAt.getTime() / 60_000), ...snapshotCounts(feedAlerts) },
     ))
+    setDayHistory((current) => appendDayBucket(current, {
+      minute: Math.floor(snapshotAt.getTime() / dayBucketMs),
+      ...daySnapshot(feedAlerts),
+    }))
   }, [notificationsEnabled])
 
   const refresh = useCallback(async () => {
@@ -725,6 +836,7 @@ function App() {
   useEffect(() => writeStored('alert-map-notify-sound', notifySound), [notifySound])
   useEffect(() => writeStored('alert-map-update-mode-v2', updateMode), [updateMode])
   useEffect(() => writeStored('alert-map-hourly', hourlySamples), [hourlySamples])
+  useEffect(() => writeStored(dayHistoryKey, dayHistory), [dayHistory])
 
   const typeFilteredAlerts = alerts.filter((alert) => {
     if (typeFilter === 'air') return isAirAlert(alert)
@@ -886,6 +998,17 @@ function App() {
   const pollInterval = updateMode === 'live' ? livePollIntervalMs : pollIntervalMs
   const recentEvents = activityHistory.slice(0, tickerLimit)
 
+  const currentDayMinute = Math.floor(tickAt / dayBucketMs)
+  const dayStats = useMemo(
+    () => buildDayStats(dayHistory, regions.map((region) => region.id), currentDayMinute),
+    [dayHistory, currentDayMinute],
+  )
+  const dayRanking = useMemo(() => Object.entries(dayStats.minutes)
+    .map(([id, minutes]) => ({ id, minutes, red: dayStats.redById[id] ?? 0 }))
+    .filter((item) => item.minutes > 0)
+    .sort((left, right) => right.minutes - left.minutes || right.red - left.red)
+    .slice(0, 8), [dayStats])
+
   const showThreatBanner = feedReady && activeCount > 0
   const headline = connection === 'loading'
     ? t('headline.syncing')
@@ -984,9 +1107,21 @@ function App() {
     setNotificationsEnabled(permission === 'granted')
   }
 
-  const exportAlerts = () => {
+  const downloadCsv = (fileName: string, rows: string[][]) => {
     const escapeCell = (value: string) => `"${value.replaceAll('"', '""')}"`
-    const rows = [
+    const csv = rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')
+    const link = document.createElement('a')
+    const exportUrl = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }))
+    link.href = exportUrl
+    link.download = fileName
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(exportUrl), 1000)
+  }
+
+  const exportAlerts = () => {
+    downloadCsv(`povitryani-zagrozy-${new Date().toISOString().slice(0, 10)}.csv`, [
       [t('csv.location'), t('csv.threat'), t('csv.level'), t('csv.started'), t('csv.duration')],
       ...typeFilteredAlerts.map((alert) => [
         displayAlertLocation(alert),
@@ -995,16 +1130,19 @@ function App() {
         formatDateTime(lang, alert.startedAtIso),
         formatDuration(lang, alert.startedAtIso),
       ]),
-    ]
-    const csv = rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')
-    const link = document.createElement('a')
-    const exportUrl = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }))
-    link.href = exportUrl
-    link.download = `povitryani-zagrozy-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.append(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(exportUrl), 1000)
+    ])
+  }
+
+  const exportDayHistory = () => {
+    downloadCsv(`istoriya-trivog-${new Date().toISOString().slice(0, 10)}.csv`, [
+      [t('day.csvStart'), t('day.csvActive'), t('day.csvRed'), t('day.csvRegions')],
+      ...dayHistory.map((bucket) => [
+        new Date(bucket.minute * dayBucketMs).toISOString().slice(0, 16).replace('T', ' '),
+        String(bucket.active.length),
+        String(bucket.red.length),
+        bucket.active.map((id) => regionTitle(lang, id, regionMetadata[id]?.title ?? id)).join(', '),
+      ]),
+    ])
   }
 
   return (
@@ -1445,6 +1583,57 @@ function App() {
           </details>
         </aside>
       </div>
+
+      <details className="day-panel">
+        <summary>
+          <History size={15} />
+          <span className="eyebrow">{t('day.eyebrow')}</span>
+          <span className="day-meta">{t('day.coverage', { buckets: dayStats.observed, percent: dayStats.coverage })}</span>
+        </summary>
+
+        <p className="day-hint">{t('day.hint')}</p>
+
+        <div className="day-chart-wrap">
+          <DayHistoryChart buckets={dayHistory} currentMinute={currentDayMinute} lang={lang} />
+          <div className="day-axis">
+            <span>{t('day.axisStart')}</span>
+            <span>{t('day.axisMid')}</span>
+            <span>{t('day.axisEnd')}</span>
+          </div>
+        </div>
+
+        <div className="day-stats">
+          <div><span>{t('day.observed')}</span><strong>{dayStats.observed}</strong></div>
+          <div><span>{t('day.quiet')}</span><strong>{dayStats.quiet}</strong></div>
+          <div><span>{t('day.gaps')}</span><strong>{Math.max(0, dayStats.span - dayStats.observed)}</strong></div>
+          <div><span>{t('day.redUnit')}</span><strong>{dayStats.redMinutes}</strong></div>
+        </div>
+
+        <div className="day-ranking-head">
+          <span className="eyebrow">{t('day.ranking')}</span>
+          <button type="button" onClick={exportDayHistory} disabled={!dayHistory.length}>
+            <Download size={14} /> <span>{t('day.csv')}</span>
+          </button>
+        </div>
+
+        {dayRanking.length ? (
+          <ol className="day-ranking">
+            {dayRanking.map((item, index) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => focusRegion(item.id)}>
+                  <span className="rank-index">{index + 1}</span>
+                  <span className="rank-name">{regionTitle(lang, item.id, regionMetadata[item.id]?.title ?? item.id)}</span>
+                  <span className="rank-bar">
+                    <i className="rank-red" style={{ width: `${(item.red / dayRanking[0].minutes) * 100}%` }} />
+                    <i className="rank-yellow" style={{ width: `${((item.minutes - item.red) / dayRanking[0].minutes) * 100}%` }} />
+                  </span>
+                  <span className="rank-value">{formatMinutes(lang, item.minutes)}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : <p className="day-hint">{t('day.empty')}</p>}
+      </details>
 
       <footer className="app-footer">
         <p>{t('footer.disclaimer')}</p>
