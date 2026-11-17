@@ -117,6 +117,7 @@ function minuteStampOf(iso: string) {
 }
 
 const channelLogLimit = 60
+const themeColors = { light: '#f2f5f0', dark: '#0e1714' } as const
 
 type ChannelEntry = {
   at: number
@@ -127,6 +128,11 @@ type ChannelEntry = {
 }
 
 type FeedReadResult = { feed: AlertFeed; fromCache: boolean; misses: string[] }
+
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
 
 // Останній вдалий знімок переживає і перезавантаження сторінки: перший рендер при
 // мертвому каналу показує відомих стан, а не порожню мапу без жодного вогнища.
@@ -702,6 +708,8 @@ function App() {
   const previousAlerts = useRef<Map<string, OfficialAlert> | null>(null)
   const previousStates = useRef<Record<string, RegionVisual> | null>(null)
   const notifySettings = useRef({ favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang })
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine)
 
   useEffect(() => {
     notifySettings.current = { favoritesOnly: notifyFavoritesOnly, sound: notifySound, favorites, lang }
@@ -714,7 +722,33 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     writeStored('alert-map-theme', theme)
+    // Смартфон малює статус-бар у колір теми: інакше темна мапа починається білою смугою.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColors[theme])
   }, [theme])
+
+  // Браузер сам вирішує, коли показувати кнопку встановлення; його пропозицію треба
+  // перехопити до події, інакше вона зникає й кнопка не з'явиться ніколи.
+  useEffect(() => {
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault()
+      setInstallPrompt(event as InstallPromptEvent)
+    }
+    const onInstalled = () => setInstallPrompt(null)
+    const onOnline = () => setIsOffline(false)
+    const onOffline = () => setIsOffline(true)
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstall)
+    window.addEventListener('appinstalled', onInstalled)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+      window.removeEventListener('appinstalled', onInstalled)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -1145,6 +1179,15 @@ function App() {
     ])
   }
 
+  const installApp = () => {
+    if (!installPrompt) return
+    void installPrompt.prompt()
+      .then(() => installPrompt.userChoice)
+      .then((choice) => {
+        if (choice.outcome === 'accepted') setInstallPrompt(null)
+      }, () => undefined)
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1171,6 +1214,17 @@ function App() {
               </button>
             ))}
           </nav>
+          {installPrompt && (
+            <button
+              type="button"
+              className="install-button"
+              onClick={installApp}
+              title={t('pwa.installHint')}
+            >
+              <Download size={14} />
+              <span className="install-label">{t('pwa.install')}</span>
+            </button>
+          )}
           <button
             type="button"
             className="theme-toggle"
@@ -1184,7 +1238,8 @@ function App() {
         </div>
         <div className="topbar-status" aria-live="polite">
           <span className={`connection-dot connection-${connection === 'error' || !isFresh ? 'error' : connection}`} />
-          <span>{!isFresh ? t('conn.stale') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
+          {isOffline && <WifiOff size={13} />}
+          <span>{isOffline ? t('pwa.offline') : !isFresh ? t('conn.stale') : connection === 'live' ? t('conn.polling') : connection === 'error' ? t('conn.offline') : t('conn.connecting')}</span>
         </div>
       </header>
 

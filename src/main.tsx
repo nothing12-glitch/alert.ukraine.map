@@ -11,3 +11,11 @@ createRoot(document.getElementById('root')!).render(
     </I18nProvider>
   </StrictMode>,
 )
+
+// У розробці сервіс-воркер тільки завадив би: він тримав би в кеші застарілий бандл.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  const baseUrl = import.meta.env.BASE_URL
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${baseUrl}sw.js`, { scope: baseUrl }).catch(() => undefined)
+  })
+}

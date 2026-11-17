@@ -193,6 +193,18 @@ const messages = {
     pl: 'Migawka nie jest z tego dnia UTC.',
   },
   'stale.report': { uk: 'Повідомити про збій', en: 'Report an outage', pl: 'Zgłoś awarię' },
+
+  'pwa.install': { uk: 'Встановити', en: 'Install', pl: 'Zainstaluj' },
+  'pwa.installHint': {
+    uk: 'Додати мапу на початковий екран. Встановлена мапа відкривається навіть без інтернету — на останньому знімку.',
+    en: 'Add the map to your home screen. The installed map opens without internet too, on the last snapshot.',
+    pl: 'Dodaj mapę do ekranu głównego. Zainstalowana mapa otwiera się także bez internetu — na ostatniej migawce.',
+  },
+  'pwa.offline': {
+    uk: 'БЕЗ ІНТЕРНЕТУ · ОСТАННІЙ ЗНОМОК',
+    en: 'OFFLINE · LAST SNAPSHOT',
+    pl: 'BEZ INTERNETU · OSTATNIA MIGAWKA',
+  },
   'channel.eyebrow': { uk: 'Діагностика каналу', en: 'Channel diagnostics', pl: 'Diagnostyka kanału' },
   'channel.hint': {
     uk: 'Спроби читання за останню годину: позначка отриманого знімка та хвилини, яких не вдалося дістати.',

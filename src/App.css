@@ -56,6 +56,33 @@
   outline-offset: 1px;
 }
 
+.install-button {
+  display: inline-flex;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--teal);
+  color: #f1fff8;
+  background: var(--teal);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+
+.install-button:hover {
+  filter: brightness(1.14);
+}
+
+.install-button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
 .theme-toggle {
   display: grid;
   width: 34px;
@@ -1409,6 +1436,10 @@
   background: var(--teal);
 }
 
+:root[data-theme='dark'] .install-button {
+  color: #10201a;
+}
+
 :root[data-theme='dark'] .theme-toggle {
   color: var(--teal);
 }
@@ -1665,6 +1696,7 @@
   .app-shell { padding: 0 18px; }
   .topbar { min-height: 66px; }
   .topbar-status { font-size: 9px; }
+  .install-button { padding: 0 8px; font-size: 9px; }
   .alert-banner { min-height: 94px; margin-top: 18px; padding: 14px; gap: 11px; flex-wrap: wrap; }
   .banner-copy { flex: 1 1 170px; }
   .banner-meta { flex-basis: 100%; flex-wrap: wrap; justify-content: flex-end; }
@@ -1700,6 +1732,8 @@
   .topbar { gap: 10px; }
   .topbar-main { gap: 10px; }
   .lang-switch button { min-width: 28px; padding: 3px 4px; font-size: 9px; }
+  .install-button { width: 34px; padding: 0; justify-content: center; }
+  .install-label { display: none; }
   .topbar-status span:last-child { display: none; }
   .brand-mark { width: 34px; height: 34px; }
   .brand-copy strong { font-size: 11px; }
