@@ -480,6 +480,30 @@ const messages = {
     pl: 'Kopiuj tekstowe podsumowanie aktywnych alarmów z linkiem do mapy',
   },
   'panel.searchHint': { uk: 'Пошук області (клавіша /)', en: 'Search regions ( / key)', pl: 'Szukaj obwodu (klawisz /)' },
+
+  'panel.image': { uk: 'PNG', en: 'PNG', pl: 'PNG' },
+  'panel.imageHint': {
+    uk: 'Зберегти те, що зараз на мапі, як PNG-картку',
+    en: 'Save what the map shows right now as a PNG card',
+    pl: 'Zapisz to, co mapa pokazuje teraz, jako kartę PNG',
+  },
+  'panel.imageBusy': { uk: 'Малюю PNG…', en: 'Drawing PNG…', pl: 'Rysuję PNG…' },
+  'panel.imageError': {
+    uk: 'Браузер не дав малюнок — спробуйте ще раз',
+    en: 'The browser did not produce the image — try again',
+    pl: 'Przeglądarka nie dała obrazu — spróbuj ponownie',
+  },
+  'image.received': { uk: 'ЗНІМОК {time}', en: 'SNAPSHOT {time}', pl: 'ZRZUT {time}' },
+  'image.counts': {
+    uk: 'ЧЕРВОНИХ {red} · ЖОВТИХ {yellow}',
+    en: 'RED {red} · YELLOW {yellow}',
+    pl: 'CZERWONE {red} · ŻÓŁTE {yellow}',
+  },
+  'image.source': {
+    uk: 'alert.ukraine.map · дані UkraineAlarm',
+    en: 'alert.ukraine.map · data from UkraineAlarm',
+    pl: 'alert.ukraine.map · dane UkraineAlarm',
+  },
   'panel.clearSearch': { uk: 'Очистити пошук', en: 'Clear search', pl: 'Wyczyść wyszukiwanie' },
   'panel.shortcuts': {
     uk: '+ / − масштаб · 0 вся мапа · / пошук · Esc зняти вибір',

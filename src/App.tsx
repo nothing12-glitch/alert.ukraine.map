@@ -9,6 +9,7 @@ import {
   Copy,
   Download,
   History,
+  ImageDown,
   Layers,
   MapPinned,
   Maximize2,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react'
 import ukraineMap from '@svg-maps/ukraine'
 import UkraineMap from './UkraineMap'
+import { exportMapImage } from './export-map-image'
 import {
   alertTypeLabel,
   districtWord,
@@ -690,6 +692,7 @@ function App() {
   const [hourlySamples, setHourlySamples] = useState<HourlySample[]>(() => readStored<HourlySample[]>('alert-map-hourly', []))
   const [dayHistory, setDayHistory] = useState<DayBucket[]>(() => readStored<DayBucket[]>(dayHistoryKey, []))
   const [copied, setCopied] = useState(false)
+  const [imageState, setImageState] = useState<'idle' | 'busy' | 'error'>('idle')
   const [tickAt, setTickAt] = useState(() => Date.now())
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -1179,6 +1182,28 @@ function App() {
     ])
   }
 
+  // Мапа живе у власному SVG, тому знімок береться з нього, а не з повторного малювання контурів.
+  const exportImage = () => {
+    const svg = document.querySelector<SVGSVGElement>('.ukraine-map')
+    if (!svg || imageState === 'busy') return
+    setImageState('busy')
+    const now = new Date()
+    void exportMapImage(svg, {
+      fileName: `povitryani-trivogy-${now.toISOString().slice(0, 16).replace(/[-:T]/g, '')}.png`,
+      title: t('app.title'),
+      timestamp: t('image.received', { time: formatDateTime(lang, (updatedAt ?? now).toISOString()) }),
+      headline,
+      counts: t('image.counts', { red: redCount, yellow: yellowCount }),
+      footer: t('image.source'),
+      isRed: redCount > 0,
+    })
+      .then(() => setImageState('idle'))
+      .catch(() => {
+        setImageState('error')
+        window.setTimeout(() => setImageState('idle'), 5000)
+      })
+  }
+
   const installApp = () => {
     if (!installPrompt) return
     void installPrompt.prompt()
@@ -1553,6 +1578,14 @@ function App() {
             </button>
             <button type="button" onClick={exportAlerts} disabled={!typeFilteredAlerts.length} title={t('panel.csvHint')}>
               <Download size={15} /> <span>CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={exportImage}
+              disabled={imageState === 'busy' || !feedReady}
+              title={imageState === 'error' ? t('panel.imageError') : t('panel.imageHint')}
+            >
+              <ImageDown size={15} /> <span>{imageState === 'busy' ? t('panel.imageBusy') : t('panel.image')}</span>
             </button>
             <button
               type="button"
